@@ -1,0 +1,23 @@
+# Database Configuration
+DB_HOST: localhost
+DB_USER: postgres
+DB_PASSWORD: password
+DB_NAME: nms
+DB_PORT: 5432
+
+# Server Configuration
+SERVER_ADDRESS: ":8080"
+PLUGINS_DIR: "plugins"
+
+# Fping Configuration
+FPING_PATH: "/usr/bin/fping"
+
+# Scheduler Configuration
+SCHEDULER_TICK_INTERVAL_SECONDS: 5
+FPING_TIMEOUT_MS: 500
+FPING_RETRY_COUNT: 2
+
+# Worker Configuration
+DISCOVERY_INTERVAL_SECONDS: 300
+POLLING_WORKER_CONCURRENCY: 10
+FPING_WORKER_CONCURRENCY: 5
