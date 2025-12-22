@@ -18,15 +18,21 @@ type Config struct {
 	PluginsDir    string `mapstructure:"PLUGINS_DIR"`
 
 	// Worker Configurations
-	FpingPath                      string `mapstructure:"FPING_PATH"`
-	DiscoveryIntervalSeconds       int    `mapstructure:"DISCOVERY_INTERVAL_SECONDS"`
-	PollingWorkerConcurrency       int    `mapstructure:"POLLING_WORKER_CONCURRENCY"`
-	FpingWorkerConcurrency         int    `mapstructure:"FPING_WORKER_CONCURRENCY"`
+	FpingPath                  string `mapstructure:"FPING_PATH"`
+	DiscoveryIntervalSeconds   int    `mapstructure:"DISCOVERY_INTERVAL_SECONDS"`
+	PollingWorkerConcurrency   int    `mapstructure:"POLLING_WORKER_CONCURRENCY"`
+	DiscoveryWorkerConcurrency int    `mapstructure:"DISCOVERY_WORKER_CONCURRENCY"`
+	FpingWorkerConcurrency     int    `mapstructure:"FPING_WORKER_CONCURRENCY"`
 
 	// Scheduler Configurations
 	SchedulerTickIntervalSeconds int `mapstructure:"SCHEDULER_TICK_INTERVAL_SECONDS"`
-	FpingTimeoutMs              int `mapstructure:"FPING_TIMEOUT_MS"`
-	FpingRetryCount             int `mapstructure:"FPING_RETRY_COUNT"`
+	FpingTimeoutMs               int `mapstructure:"FPING_TIMEOUT_MS"`
+	FpingRetryCount              int `mapstructure:"FPING_RETRY_COUNT"`
+
+	// Security Configurations
+	JWTSecret   string `mapstructure:"JWT_SECRET"`
+	TLSCertFile string `mapstructure:"TLS_CERT_FILE"`
+	TLSKeyFile  string `mapstructure:"TLS_KEY_FILE"`
 }
 
 // LoadConfig reads configuration from file or environment variables.

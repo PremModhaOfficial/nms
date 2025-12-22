@@ -1,0 +1,79 @@
+[0;32m═══════════════════════════════════════════════════════════════[0m
+[0;32m                    NMS Server Startup                         [0m
+[0;32m═══════════════════════════════════════════════════════════════[0m
+[1;33m[1/3] Compiling server...[0m
+[0;32m[✓] Server compiled to bin/nms-server[0m
+[1;33m[2/3] Setting up environment...[0m
+[1;33m    Generating password hash for custom password...[0m
+[0;32m[✓] Password hash generated[0m
+[0;32m[✓] Environment configured[0m
+[1;33m    Admin user: admin[0m
+[1;33m[3/3] Starting server...[0m
+[0;32m═══════════════════════════════════════════════════════════════[0m
+
+{"time":"2025-12-22T18:01:10.62392816+05:30","level":"INFO","msg":"Config loaded","fping_path":"/usr/bin/fping","tick_interval":5}
+{"time":"2025-12-22T18:01:10.629653264+05:30","level":"INFO","msg":"Connected to database"}
+{"time":"2025-12-22T18:01:10.629754765+05:30","level":"INFO","msg":"[Poller] Scanning plugins from: plugins"}
+{"time":"2025-12-22T18:01:10.629816584+05:30","level":"INFO","msg":"[Poller] Loaded 0 plugins"}
+
+2025/12/22 18:01:10 [32m/home/prem-modha/projects/nms/pkg/database/repository.go:30
+[0m[33m[1.644ms] [34;1m[rows:2][0m SELECT * FROM "monitors"
+
+2025/12/22 18:01:10 [32m/home/prem-modha/projects/nms/pkg/database/repository.go:30
+[0m[33m[0.361ms] [34;1m[rows:5][0m SELECT * FROM "credential_profiles"
+{"time":"2025-12-22T18:01:10.63200606+05:30","level":"INFO","msg":"[Scheduler] LoadCache: Loading 5 credentials"}
+{"time":"2025-12-22T18:01:10.63202236+05:30","level":"INFO","msg":"[Scheduler] LoadCache: Loading 2 monitors"}
+{"time":"2025-12-22T18:01:10.632029246+05:30","level":"INFO","msg":"[Scheduler] LoadCache: Monitor ID=1, IP=127.0.0.1, Interval=10s, Deadline=2025-12-22T18:01:10+05:30"}
+{"time":"2025-12-22T18:01:10.632034224+05:30","level":"INFO","msg":"[Scheduler] LoadCache: Monitor ID=2, IP=127.0.0.1, Interval=10s, Deadline=2025-12-22T18:01:10+05:30"}
+{"time":"2025-12-22T18:01:10.632040053+05:30","level":"INFO","msg":"[Scheduler] LoadCache: Complete. 2 monitors, 5 credentials loaded"}
+{"time":"2025-12-22T18:01:10.632051989+05:30","level":"INFO","msg":"Scheduler cache loaded from database"}
+[GIN-debug] [WARNING] Creating an Engine instance with the Logger and Recovery middleware already attached.
+
+[GIN-debug] [WARNING] Running in "debug" mode. Switch to "release" mode in production.
+ - using env:	export GIN_MODE=release
+ - using code:	gin.SetMode(gin.ReleaseMode)
+
+{"time":"2025-12-22T18:01:10.63208141+05:30","level":"INFO","msg":"[Poller] Run: Starting main loop"}
+{"time":"2025-12-22T18:01:10.632111713+05:30","level":"INFO","msg":"[PollPool] Starting 10 workers"}
+{"time":"2025-12-22T18:01:10.632119862+05:30","level":"INFO","msg":"[DataWriter] Starting"}
+[GIN-debug] POST   /login                    --> nms/pkg/api.LoginHandler (3 handlers)
+[GIN-debug] GET    /api/v1/credentials       --> nms/pkg/api.(*CrudHandler[...]).RegisterRoutes.func1 (4 handlers)
+[GIN-debug] GET    /api/v1/credentials/:id   --> nms/pkg/api.(*CrudHandler[...]).RegisterRoutes.func2 (4 handlers)
+[GIN-debug] POST   /api/v1/credentials       --> nms/pkg/api.(*CrudHandler[...]).RegisterRoutes.func3 (4 handlers)
+[GIN-debug] PUT    /api/v1/credentials/:id   --> nms/pkg/api.(*CrudHandler[...]).RegisterRoutes.func4 (4 handlers)
+{"time":"2025-12-22T18:01:10.632149115+05:30","level":"INFO","msg":"[PollPool] Worker 0 started"}
+[GIN-debug] DELETE /api/v1/credentials/:id   --> nms/pkg/api.(*CrudHandler[...]).RegisterRoutes.func5 (4 handlers)
+{"time":"2025-12-22T18:01:10.632176374+05:30","level":"INFO","msg":"[PollPool] Worker 5 started"}
+[GIN-debug] GET    /api/v1/monitors          --> nms/pkg/api.(*CrudHandler[...]).RegisterRoutes.func1 (4 handlers)
+[GIN-debug] GET    /api/v1/monitors/:id      --> nms/pkg/api.(*CrudHandler[...]).RegisterRoutes.func2 (4 handlers)
+[GIN-debug] POST   /api/v1/monitors          --> nms/pkg/api.(*CrudHandler[...]).RegisterRoutes.func3 (4 handlers)
+[GIN-debug] PUT    /api/v1/monitors/:id      --> nms/pkg/api.(*CrudHandler[...]).RegisterRoutes.func4 (4 handlers)
+[GIN-debug] DELETE /api/v1/monitors/:id      --> nms/pkg/api.(*CrudHandler[...]).RegisterRoutes.func5 (4 handlers)
+{"time":"2025-12-22T18:01:10.632185681+05:30","level":"INFO","msg":"[Scheduler] Run: Starting main loop with tick interval=5s"}
+{"time":"2025-12-22T18:01:10.632228762+05:30","level":"INFO","msg":"[PollPool] Worker 7 started"}
+{"time":"2025-12-22T18:01:10.632236276+05:30","level":"INFO","msg":"[PollPool] Worker 1 started"}
+{"time":"2025-12-22T18:01:10.632241361+05:30","level":"INFO","msg":"[PollPool] Worker 2 started"}
+{"time":"2025-12-22T18:01:10.632245546+05:30","level":"INFO","msg":"[PollPool] Worker 3 started"}
+{"time":"2025-12-22T18:01:10.632249969+05:30","level":"INFO","msg":"[PollPool] Worker 4 started"}
+[GIN-debug] GET    /api/v1/discovery_profiles --> nms/pkg/api.(*CrudHandler[...]).RegisterRoutes.func1 (4 handlers)
+[GIN-debug] GET    /api/v1/discovery_profiles/:id --> nms/pkg/api.(*CrudHandler[...]).RegisterRoutes.func2 (4 handlers)
+[GIN-debug] POST   /api/v1/discovery_profiles --> nms/pkg/api.(*CrudHandler[...]).RegisterRoutes.func3 (4 handlers)
+[GIN-debug] PUT    /api/v1/discovery_profiles/:id --> nms/pkg/api.(*CrudHandler[...]).RegisterRoutes.func4 (4 handlers)
+[GIN-debug] DELETE /api/v1/discovery_profiles/:id --> nms/pkg/api.(*CrudHandler[...]).RegisterRoutes.func5 (4 handlers)
+{"time":"2025-12-22T18:01:10.632255236+05:30","level":"INFO","msg":"[PollPool] Worker 6 started"}
+{"time":"2025-12-22T18:01:10.632326894+05:30","level":"INFO","msg":"[PollPool] Worker 8 started"}
+{"time":"2025-12-22T18:01:10.632332928+05:30","level":"INFO","msg":"[PollPool] Worker 9 started"}
+[GIN-debug] GET    /api/v1/devices           --> nms/pkg/api.(*CrudHandler[...]).RegisterRoutes.func1 (4 handlers)
+[GIN-debug] GET    /api/v1/devices/:id       --> nms/pkg/api.(*CrudHandler[...]).RegisterRoutes.func2 (4 handlers)
+[GIN-debug] POST   /api/v1/devices           --> nms/pkg/api.(*CrudHandler[...]).RegisterRoutes.func3 (4 handlers)
+[GIN-debug] PUT    /api/v1/devices/:id       --> nms/pkg/api.(*CrudHandler[...]).RegisterRoutes.func4 (4 handlers)
+[GIN-debug] DELETE /api/v1/devices/:id       --> nms/pkg/api.(*CrudHandler[...]).RegisterRoutes.func5 (4 handlers)
+[GIN-debug] POST   /api/v1/metrics/:monitor_id --> nms/pkg/api.(*MetricHandler).Query-fm (4 handlers)
+{"time":"2025-12-22T18:01:10.632361081+05:30","level":"INFO","msg":"[DiscoveryService] Starting service"}
+{"time":"2025-12-22T18:01:10.632381854+05:30","level":"INFO","msg":"Starting HTTP server","port":8080}
+[GIN-debug] [WARNING] You trusted all proxies, this is NOT safe. We recommend you to set a value.
+Please check https://github.com/gin-gonic/gin/blob/master/docs/doc.md#dont-trust-all-proxies for details.
+{"time":"2025-12-22T18:01:10.632404259+05:30","level":"INFO","msg":"[DiscoveryPool] Starting 0 workers"}
+[GIN-debug] Listening and serving HTTP on :8080
+{"time":"2025-12-22T18:01:10.632473986+05:30","level":"INFO","msg":"[DiscoveryPool] All workers stopped"}
+[GIN] 2025/12/22 - 18:01:15 | 200 |   88.351702ms |             ::1 | POST     "/login"

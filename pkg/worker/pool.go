@@ -12,7 +12,8 @@ import (
 // Pool is a generic worker pool that executes plugin binaries with batched tasks
 type Pool[T any, R any] struct {
 	workerCount int
-	poolName    string // For logging
+	poolName    string   // For logging
+	args        []string // Continuous arguments for every execution
 
 	jobChan    chan Job[T]
 	resultChan chan []R
@@ -25,10 +26,11 @@ type Job[T any] struct {
 }
 
 // NewPool creates a new generic worker pool
-func NewPool[T any, R any](workerCount int, poolName string) *Pool[T, R] {
+func NewPool[T any, R any](workerCount int, poolName string, args ...string) *Pool[T, R] {
 	return &Pool[T, R]{
 		workerCount: workerCount,
 		poolName:    poolName,
+		args:        args,
 		jobChan:     make(chan Job[T], 100),
 		resultChan:  make(chan []R, 100),
 	}
@@ -100,7 +102,7 @@ func (p *Pool[T, R]) executePlugin(job Job[T]) []R {
 	}
 
 	// Execute plugin
-	cmd := exec.Command(job.BinPath)
+	cmd := exec.Command(job.BinPath, p.args...)
 	cmd.Stdin = bytes.NewReader(inputJSON)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

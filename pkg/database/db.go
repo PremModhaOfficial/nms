@@ -23,7 +23,7 @@ func Connect() (*gorm.DB, error) {
 		host = "localhost"
 	}
 	if user == "" {
-		user = "postgres"
+		user = "nmslite"
 	}
 	if password == "" {
 		password = "nmslite"

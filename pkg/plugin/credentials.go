@@ -14,6 +14,11 @@ func DecryptPayload(cred *models.CredentialProfile) (string, error) {
 
 	decrypted, err := database.DecryptStruct(*cred)
 	if err != nil {
+		// Fallback: If it's already raw JSON (starts with {), use it as is
+		// This handles unencrypted data in the DB during development/migration
+		if len(cred.Payload) > 0 && cred.Payload[0] == '{' {
+			return cred.Payload, nil
+		}
 		return "", err
 	}
 

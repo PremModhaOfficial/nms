@@ -1,8 +1,19 @@
 package models
 
 import (
+	"encoding/json"
 	"time"
 )
+
+// Metric represents the metrics table storing raw poll results
+type Metric struct {
+	ID        int64           `gorm:"primaryKey;autoIncrement" json:"id"`
+	MonitorID int64           `gorm:"not null" json:"monitor_id"`
+	Data      json.RawMessage `gorm:"type:jsonb;not null" json:"data"`
+	Timestamp time.Time       `gorm:"default:CURRENT_TIMESTAMP" json:"timestamp"`
+}
+
+func (Metric) TableName() string { return "metrics" }
 
 // CredentialProfile represents the credential_profiles table
 type CredentialProfile struct {
@@ -58,21 +69,19 @@ type Monitor struct {
 	UpdatedAt              time.Time          `gorm:"default:CURRENT_TIMESTAMP" json:"updated_at"`
 }
 
-// TODO: Define a Metric model to store poll results.
-// type Metric struct {
-//     ID         int64     `gorm:"primaryKey;autoIncrement" json:"id"`
-//     MonitorID  int64     `gorm:"not null" json:"monitor_id"`
-//     Name       string    `gorm:"not null" json:"name"`
-//     Value      float64   `gorm:"not null" json:"value"`
-//     Timestamp  time.Time `gorm:"default:CURRENT_TIMESTAMP" json:"timestamp"`
-// }
-// func (Metric) TableName() string { return "metrics" }
-
 // TableName overrides the default table name logic
 func (CredentialProfile) TableName() string { return "credential_profiles" }
 func (DiscoveryProfile) TableName() string  { return "discovery_profiles" }
 func (Device) TableName() string            { return "devices" }
 func (Monitor) TableName() string           { return "monitors" }
+
+// MetricQuery represents a request for metric data
+type MetricQuery struct {
+	Path  string    `json:"path"`  // JSON path (e.g., "cpu" or "cpu.total")
+	Start time.Time `json:"start"` // start timestamp
+	End   time.Time `json:"end"`   // end timestamp
+	Limit int       `json:"limit"`
+}
 
 // GetID methods to satisfy Identifiable interface
 func (c CredentialProfile) GetID() int64 { return c.ID }

@@ -1,0 +1,247 @@
+{
+  "info": {
+    "name": "Lite NMS API",
+    "description": "API collection for the Lite NMS (Network Management System)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{jwt_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "jwt_token",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.token) {",
+                  "    pm.collectionVariables.set('jwt_token', jsonData.token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"username\": \"admin\",\n    \"password\": \"admin\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/login", "host": ["{{base_url}}"], "path": ["login"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Credentials",
+      "item": [
+        {
+          "name": "List Credentials",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/v1/credentials", "host": ["{{base_url}}"], "path": ["api", "v1", "credentials"] }
+          }
+        },
+        {
+          "name": "Get Credential by ID",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/v1/credentials/1", "host": ["{{base_url}}"], "path": ["api", "v1", "credentials", "1"] }
+          }
+        },
+        {
+          "name": "Create Credential",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"name\": \"Windows Admin\",\n    \"description\": \"Admin credentials for Windows servers\",\n    \"protocol\": \"winrm\",\n    \"payload\": \"{\\\"username\\\": \\\"admin\\\", \\\"password\\\": \\\"secret\\\"}\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/v1/credentials", "host": ["{{base_url}}"], "path": ["api", "v1", "credentials"] }
+          }
+        },
+        {
+          "name": "Update Credential",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"name\": \"Windows Admin Updated\",\n    \"description\": \"Updated description\",\n    \"protocol\": \"winrm\",\n    \"payload\": \"{\\\"username\\\": \\\"newadmin\\\", \\\"password\\\": \\\"newsecret\\\"}\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/v1/credentials/1", "host": ["{{base_url}}"], "path": ["api", "v1", "credentials", "1"] }
+          }
+        },
+        {
+          "name": "Delete Credential",
+          "request": {
+            "method": "DELETE",
+            "url": { "raw": "{{base_url}}/api/v1/credentials/1", "host": ["{{base_url}}"], "path": ["api", "v1", "credentials", "1"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Monitors",
+      "item": [
+        {
+          "name": "List Monitors",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/v1/monitors", "host": ["{{base_url}}"], "path": ["api", "v1", "monitors"] }
+          }
+        },
+        {
+          "name": "Get Monitor by ID",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/v1/monitors/1", "host": ["{{base_url}}"], "path": ["api", "v1", "monitors", "1"] }
+          }
+        },
+        {
+          "name": "Create Monitor",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"hostname\": \"server-01\",\n    \"ip_address\": \"192.168.1.10\",\n    \"plugin_id\": \"winrm\",\n    \"port\": 5985,\n    \"credential_profile_id\": 1,\n    \"discovery_profile_id\": 1,\n    \"polling_interval_seconds\": 60\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/v1/monitors", "host": ["{{base_url}}"], "path": ["api", "v1", "monitors"] }
+          }
+        },
+        {
+          "name": "Update Monitor",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"hostname\": \"server-01-updated\",\n    \"ip_address\": \"192.168.1.10\",\n    \"plugin_id\": \"winrm\",\n    \"port\": 5985,\n    \"credential_profile_id\": 1,\n    \"discovery_profile_id\": 1,\n    \"polling_interval_seconds\": 120\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/v1/monitors/1", "host": ["{{base_url}}"], "path": ["api", "v1", "monitors", "1"] }
+          }
+        },
+        {
+          "name": "Delete Monitor",
+          "request": {
+            "method": "DELETE",
+            "url": { "raw": "{{base_url}}/api/v1/monitors/1", "host": ["{{base_url}}"], "path": ["api", "v1", "monitors", "1"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Discovery Profiles",
+      "item": [
+        {
+          "name": "List Discovery Profiles",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/v1/discovery_profiles", "host": ["{{base_url}}"], "path": ["api", "v1", "discovery_profiles"] }
+          }
+        },
+        {
+          "name": "Get Discovery Profile by ID",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/v1/discovery_profiles/1", "host": ["{{base_url}}"], "path": ["api", "v1", "discovery_profiles", "1"] }
+          }
+        },
+        {
+          "name": "Create Discovery Profile",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"name\": \"Office Network\",\n    \"target\": \"192.168.1.0/24\",\n    \"port\": 5985,\n    \"credential_profile_id\": 1,\n    \"auto_provision\": true,\n    \"auto_run\": true\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/v1/discovery_profiles", "host": ["{{base_url}}"], "path": ["api", "v1", "discovery_profiles"] }
+          }
+        },
+        {
+          "name": "Update Discovery Profile",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"name\": \"Office Network Updated\",\n    \"target\": \"192.168.2.0/24\",\n    \"port\": 5985,\n    \"credential_profile_id\": 1,\n    \"auto_provision\": false,\n    \"auto_run\": false\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/v1/discovery_profiles/1", "host": ["{{base_url}}"], "path": ["api", "v1", "discovery_profiles", "1"] }
+          }
+        },
+        {
+          "name": "Delete Discovery Profile",
+          "request": {
+            "method": "DELETE",
+            "url": { "raw": "{{base_url}}/api/v1/discovery_profiles/1", "host": ["{{base_url}}"], "path": ["api", "v1", "discovery_profiles", "1"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Devices",
+      "item": [
+        {
+          "name": "List Devices",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/v1/devices", "host": ["{{base_url}}"], "path": ["api", "v1", "devices"] }
+          }
+        },
+        {
+          "name": "Get Device by ID",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/v1/devices/1", "host": ["{{base_url}}"], "path": ["api", "v1", "devices", "1"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Metrics",
+      "item": [
+        {
+          "name": "Query Metrics",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"path\": \"cpu.total\",\n    \"limit\": 10\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/v1/metrics/1", "host": ["{{base_url}}"], "path": ["api", "v1", "metrics", "1"] }
+          }
+        }
+      ]
+    }
+  ]
+}

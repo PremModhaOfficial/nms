@@ -2,10 +2,14 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
+	"os"
 
 	"nms/pkg/api"
+	"nms/pkg/communication"
 	"nms/pkg/database"
+	"nms/pkg/datawriter"
+	"nms/pkg/discovery"
 	"nms/pkg/models"
 	"nms/pkg/plugin"
 	"nms/pkg/poller"
@@ -14,123 +18,177 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func run() error {
-	return nil
-}
-
 func main() {
-	// Load Configuration
+	// ══════════════════════════════════════════════════════════════
+	// STRUCTURED LOGGING
+	// ══════════════════════════════════════════════════════════════
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	slog.SetDefault(logger)
+
+	// ══════════════════════════════════════════════════════════════
+	// CONFIGURATION
+	// ══════════════════════════════════════════════════════════════
 	config, err := models.LoadConfig(".")
 	if err != nil {
-		log.Printf("Warning: Failed to load config: %v. Using defaults.", err)
-		// Set defaults
+		slog.Warn("Failed to load config, using defaults", "error", err)
+		config.PluginsDir = "plugins"
 		config.FpingPath = "/usr/bin/fping"
 		config.SchedulerTickIntervalSeconds = 5
 		config.FpingTimeoutMs = 500
 		config.FpingRetryCount = 2
+		config.PollingWorkerConcurrency = 5
+		config.DiscoveryWorkerConcurrency = 3
+		config.JWTSecret = "default-insecure-secret-change-me"
 	}
-	log.Printf("Config loaded: FpingPath=%s, TickInterval=%ds", config.FpingPath, config.SchedulerTickIntervalSeconds)
+	slog.Info("Config loaded", "fping_path", config.FpingPath, "tick_interval", config.SchedulerTickIntervalSeconds)
 
-	// Initialize Database
+	// Set JWT secret for the api package
+	api.SetJWTSecret(config.JWTSecret)
+
+	// ══════════════════════════════════════════════════════════════
+	// DATABASE
+	// ══════════════════════════════════════════════════════════════
 	db, err := database.Connect()
 	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
+		slog.Error("Failed to connect to database", "error", err)
+		os.Exit(1)
 	}
 
-	// Initialize Repositories (Pure Gorm)
-	credRepo := database.NewGormRepository[models.CredentialProfile](db)
-	discRepo := database.NewGormRepository[models.DiscoveryProfile](db)
-	devRepo := database.NewGormRepository[models.Device](db)
-	monRepo := database.NewGormRepository[models.Monitor](db)
+	// ══════════════════════════════════════════════════════════════
+	// COMMUNICATION CHANNELS - One per topic
+	// ══════════════════════════════════════════════════════════════
+	// Queue Choice Justification:
+	// We use Go channels as the internal message queue. This provides:
+	// 1. Zero external dependencies (no Redis, RabbitMQ, etc.)
+	// 2. Type-safe message passing with compile-time checks.
+	// 3. Excellent performance for single-binary deployments.
+	// 4. Simple semantics (send/receive) that are idiomatic to Go.
+	// Trade-off: Messages are not persisted; a crash loses in-flight events.
+	// For production-critical scenarios, consider an external queue.
+	monitorChan := make(chan models.Event, 100)
+	credentialChan := make(chan models.Event, 100)
+	discProfileChan := make(chan models.Event, 100)
+	deviceChan := make(chan models.Event, 100)
+	pollResultChan := make(chan []plugin.Result, 100)
+	discResultChan := make(chan plugin.Result, 100)
+	schedulerToPollerChan := make(chan []*models.Monitor, 10)
 
-	// Channels for Scheduler -> Poller communication
-	schedulerOutChan := make(chan []*models.Monitor, 10)
-	pollerResultChan := make(chan []plugin.Result, 10)
+	// ══════════════════════════════════════════════════════════════
+	// REPOSITORIES - Base and Publishing wrappers
+	// ══════════════════════════════════════════════════════════════
+	baseCredRepo := database.NewGormRepository[models.CredentialProfile](db)
+	baseMonRepo := database.NewGormRepository[models.Monitor](db)
+	baseDiscProfileRepo := database.NewPreloadingDiscoveryProfileRepo(db) // Auto-preloads CredentialProfile
+	baseDeviceRepo := database.NewGormRepository[models.Device](db)
+	baseMetricRepo := database.NewGormRepository[models.Metric](db)
+	metricRepo := database.NewMetricRepository(baseMetricRepo)
 
-	// Initialize Poller with worker pool
-	poll := poller.NewPoller("plugins", 5, schedulerOutChan, pollerResultChan)
+	// Publishing wrappers for EDA - just channels, no DB dependencies
+	credRepo := communication.NewPublishingRepo[models.CredentialProfile](baseCredRepo, credentialChan)
+	monRepo := communication.NewPublishingRepo[models.Monitor](baseMonRepo, monitorChan)
+	discProfileRepo := communication.NewPublishingRepo[models.DiscoveryProfile](baseDiscProfileRepo, discProfileChan)
+	deviceRepo := communication.NewPublishingRepo[models.Device](baseDeviceRepo, deviceChan)
 
-	// Initialize Scheduler with config
+	// ══════════════════════════════════════════════════════════════
+	// SERVICES
+	// ══════════════════════════════════════════════════════════════
 	sched := scheduler.NewScheduler(
-		schedulerOutChan,
+		monitorChan,
+		credentialChan,
+		schedulerToPollerChan,
 		config.FpingPath,
 		config.SchedulerTickIntervalSeconds,
 		config.FpingTimeoutMs,
 		config.FpingRetryCount,
 	)
 
-	// Load Cache (Initial Load)
+	poll := poller.NewPoller(
+		config.PluginsDir,
+		config.PollingWorkerConcurrency,
+		schedulerToPollerChan,
+		pollResultChan,
+	)
+
+	discService := discovery.NewDiscoveryService(
+		discProfileChan,
+		discResultChan,
+		config.PluginsDir,
+		config.DiscoveryWorkerConcurrency,
+	)
+
+	dataWriter := datawriter.NewWriter(
+		pollResultChan,
+		discResultChan,
+		db,
+		deviceRepo,
+		monRepo,
+	)
+
+	// ══════════════════════════════════════════════════════════════
+	// INITIAL CACHE LOAD
+	// ══════════════════════════════════════════════════════════════
 	ctx := context.Background()
-	initialMonitors, err := monRepo.List(ctx)
+	initialMonitors, err := baseMonRepo.List(ctx)
 	if err != nil {
-		log.Printf("Failed to list monitors for scheduler: %v", err)
+		slog.Error("Failed to list monitors for scheduler", "error", err)
 	}
-	initialCreds, err := credRepo.List(ctx)
+	initialCreds, err := baseCredRepo.List(ctx)
 	if err != nil {
-		log.Printf("Failed to list credentials for scheduler: %v", err)
+		slog.Error("Failed to list credentials for scheduler", "error", err)
 	}
-
 	sched.LoadCache(initialMonitors, initialCreds)
-	log.Println("Scheduler cache loaded from database")
+	slog.Info("Scheduler cache loaded from database")
 
-	// Start Scheduler and Poller
+	// ══════════════════════════════════════════════════════════════
+	// START SERVICES
+	// ══════════════════════════════════════════════════════════════
 	go sched.Run(ctx)
 	go poll.Run(ctx)
+	go discService.Start(ctx)
+	go dataWriter.Run(ctx)
 
-	// Start result consumer (logs results for now)
-	go func() {
-		for results := range pollerResultChan {
-			log.Printf("Received %d poll results", len(results))
-
-			// TODO: Implement result persistence.
-			// 1. Iterate through results.
-			// 2. Map metrics to a database schema (e.g., a 'metrics' table).
-			// 3. Batch insert results into the database for efficiency.
-			// 4. Update the 'last_polled_at' timestamp on the Monitor record.
-
-			for _, result := range results {
-				if result.Success {
-					log.Printf("  [%s:%d] Success: %d metrics", result.Target, result.Port, len(result.Metrics))
-				} else {
-					log.Printf("  [%s:%d] Error: %s", result.Target, result.Port, result.Error)
-				}
-			}
-		}
-	}()
-
-	// Initialize Services (Coordinator Layer)
-
-	// TODO: Initialize Discovery Service and Workers
-	// 1. Create discoveryPool := worker.NewDiscoveryPool(workerCount)
-	// 2. Create discoveryService := worker.NewDiscoveryService(discoveryPool, devRepo, monRepo, credRepo)
-	// 3. Start discoveryService: go discoveryService.Start(ctx)
-
-	// Initialize Handlers
-	// For Monitors and Creds, use the Service (which acts as a Repo)
-
-	// For others, use Repo directly
-	discHandler := api.NewCrudHandler[models.DiscoveryProfile](discRepo)
-	// TODO: Wrap discRepo to trigger discoveryService.RunProfile when a profile is created or updated.
-
-	devHandler := api.NewCrudHandler[models.Device](devRepo)
+	// ══════════════════════════════════════════════════════════════
+	// API HANDLERS
+	// ══════════════════════════════════════════════════════════════
 	credHandler := api.NewCrudHandler[models.CredentialProfile](credRepo)
 	monHandler := api.NewCrudHandler[models.Monitor](monRepo)
+	discProfileHandler := api.NewCrudHandler[models.DiscoveryProfile](discProfileRepo)
+	deviceHandler := api.NewCrudHandler[models.Device](baseDeviceRepo) // Read-only, no publishing
+	metricHandler := api.NewMetricHandler(metricRepo)
 
-	// Setup Router
+	// ══════════════════════════════════════════════════════════════
+	// ROUTER SETUP
+	// ══════════════════════════════════════════════════════════════
 	r := gin.Default()
 
-	// Register Routes
+	// Public routes (no auth)
+	r.POST("/login", api.LoginHandler)
+
+	// Protected routes
 	apiGroup := r.Group("/api/v1")
+	apiGroup.Use(api.JWTMiddleware())
 	{
 		credHandler.RegisterRoutes(apiGroup, "/credentials")
-		discHandler.RegisterRoutes(apiGroup, "/discovery")
-		devHandler.RegisterRoutes(apiGroup, "/devices")
 		monHandler.RegisterRoutes(apiGroup, "/monitors")
+		discProfileHandler.RegisterRoutes(apiGroup, "/discovery_profiles")
+		deviceHandler.RegisterRoutes(apiGroup, "/devices")
+		metricHandler.RegisterRoutes(apiGroup)
 	}
 
-	// Start Server
-	log.Println("Starting server on :8080")
-	if err := r.Run(":8080"); err != nil {
-		log.Fatalf("Server failed to start: %v", err)
+	// ══════════════════════════════════════════════════════════════
+	// START SERVER
+	// ══════════════════════════════════════════════════════════════
+	if config.TLSCertFile != "" && config.TLSKeyFile != "" {
+		slog.Info("Starting HTTPS server", "port", 8443)
+		if err := r.RunTLS(":8443", config.TLSCertFile, config.TLSKeyFile); err != nil {
+			slog.Error("Server failed to start", "error", err)
+			os.Exit(1)
+		}
+	} else {
+		slog.Info("Starting HTTP server", "port", 8080)
+		if err := r.Run(":8080"); err != nil {
+			slog.Error("Server failed to start", "error", err)
+			os.Exit(1)
+		}
 	}
 }

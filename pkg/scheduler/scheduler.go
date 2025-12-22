@@ -24,9 +24,10 @@ type Scheduler struct {
 	monitors map[int64]*MonitorWithDeadline
 	creds    map[int64]*models.CredentialProfile
 
-	// Channels
-	InputChan  chan models.Event
-	OutputChan chan<- []*models.Monitor // Sends just the list of qualified monitors
+	// Channels - received from outside for event-driven communication
+	monitorEvents <-chan models.Event      // Monitor CRUD events
+	credEvents    <-chan models.Event      // Credential CRUD events
+	OutputChan    chan<- []*models.Monitor // Sends qualified monitors to poller
 
 	// Config
 	fpingPath    string
@@ -36,16 +37,24 @@ type Scheduler struct {
 }
 
 // NewScheduler creates a new Scheduler instance.
-func NewScheduler(outputChan chan<- []*models.Monitor, fpingPath string, tickIntervalSec, fpingTimeoutMs, fpingRetries int) *Scheduler {
+// monitorEvents and credEvents are receive-only channels from the communication layer.
+func NewScheduler(
+	monitorEvents <-chan models.Event,
+	credEvents <-chan models.Event,
+	outputChan chan<- []*models.Monitor,
+	fpingPath string,
+	tickIntervalSec, fpingTimeoutMs, fpingRetries int,
+) *Scheduler {
 	return &Scheduler{
-		monitors:     make(map[int64]*MonitorWithDeadline),
-		creds:        make(map[int64]*models.CredentialProfile),
-		InputChan:    make(chan models.Event, 100),
-		OutputChan:   outputChan,
-		fpingPath:    fpingPath,
-		tickInterval: time.Duration(tickIntervalSec) * time.Second,
-		fpingTimeout: fpingTimeoutMs,
-		fpingRetries: fpingRetries,
+		monitors:      make(map[int64]*MonitorWithDeadline),
+		creds:         make(map[int64]*models.CredentialProfile),
+		monitorEvents: monitorEvents,
+		credEvents:    credEvents,
+		OutputChan:    outputChan,
+		fpingPath:     fpingPath,
+		tickInterval:  time.Duration(tickIntervalSec) * time.Second,
+		fpingTimeout:  fpingTimeoutMs,
+		fpingRetries:  fpingRetries,
 	}
 }
 
@@ -83,9 +92,13 @@ func (s *Scheduler) Run(ctx context.Context) {
 			log.Println("[Scheduler] Run: Context cancelled, shutting down")
 			return
 
-		case event := <-s.InputChan:
-			log.Printf("[Scheduler] Run: Received event type=%s", event.Type)
-			s.processEvent(event)
+		case event := <-s.monitorEvents:
+			log.Printf("[Scheduler] Run: Received monitor event type=%s", event.Type)
+			s.processMonitorEvent(event)
+
+		case event := <-s.credEvents:
+			log.Printf("[Scheduler] Run: Received credential event type=%s", event.Type)
+			s.processCredentialEvent(event)
 
 		case <-ticker.C:
 			log.Println("[Scheduler] Run: Tick - running schedule()")
@@ -94,43 +107,42 @@ func (s *Scheduler) Run(ctx context.Context) {
 	}
 }
 
-// processEvent handles CRUD events to keep the cache and deadlines in sync.
-func (s *Scheduler) processEvent(event models.Event) {
+// processMonitorEvent handles CRUD events for monitors.
+func (s *Scheduler) processMonitorEvent(event models.Event) {
+	payload, ok := event.Payload.(*models.Monitor)
+	if !ok {
+		log.Printf("[Scheduler] processMonitorEvent: Invalid payload type")
+		return
+	}
+
 	switch event.Type {
 	case models.EventCreate, models.EventUpdate:
-		// Type assert the payload
-		switch payload := event.Payload.(type) {
-		case *models.Monitor:
-			log.Printf("[Scheduler] processEvent: %s Monitor ID=%d, IP=%s", event.Type, payload.ID, payload.IPAddress)
-			s.monitors[payload.ID] = &MonitorWithDeadline{
-				Monitor:  payload,
-				Deadline: time.Now(), // New/updated monitors are immediately eligible
-			}
-
-		case *models.CredentialProfile:
-			log.Printf("[Scheduler] processEvent: %s CredentialProfile ID=%d", event.Type, payload.ID)
-			s.creds[payload.ID] = payload
-
-		default:
-			log.Printf("[Scheduler] processEvent: Unknown payload type for %s event", event.Type)
+		log.Printf("[Scheduler] processMonitorEvent: %s Monitor ID=%d, IP=%s", event.Type, payload.ID, payload.IPAddress)
+		s.monitors[payload.ID] = &MonitorWithDeadline{
+			Monitor:  payload,
+			Deadline: time.Now(), // New/updated monitors are immediately eligible
 		}
-
 	case models.EventDelete:
-		switch payload := event.Payload.(type) {
-		case *models.Monitor:
-			log.Printf("[Scheduler] processEvent: Delete Monitor ID=%d", payload.ID)
-			delete(s.monitors, payload.ID)
+		log.Printf("[Scheduler] processMonitorEvent: Delete Monitor ID=%d", payload.ID)
+		delete(s.monitors, payload.ID)
+	}
+}
 
-		case *models.CredentialProfile:
-			log.Printf("[Scheduler] processEvent: Delete CredentialProfile ID=%d", payload.ID)
-			delete(s.creds, payload.ID)
+// processCredentialEvent handles CRUD events for credentials.
+func (s *Scheduler) processCredentialEvent(event models.Event) {
+	payload, ok := event.Payload.(*models.CredentialProfile)
+	if !ok {
+		log.Printf("[Scheduler] processCredentialEvent: Invalid payload type")
+		return
+	}
 
-		default:
-			log.Printf("[Scheduler] processEvent: Unknown payload type for delete event")
-		}
-
-	default:
-		log.Printf("[Scheduler] processEvent: Unknown event type=%s", event.Type)
+	switch event.Type {
+	case models.EventCreate, models.EventUpdate:
+		log.Printf("[Scheduler] processCredentialEvent: %s CredentialProfile ID=%d", event.Type, payload.ID)
+		s.creds[payload.ID] = payload
+	case models.EventDelete:
+		log.Printf("[Scheduler] processCredentialEvent: Delete CredentialProfile ID=%d", payload.ID)
+		delete(s.creds, payload.ID)
 	}
 }
 

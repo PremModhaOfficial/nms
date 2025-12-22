@@ -39,9 +39,11 @@ func TestScheduler_Integration(t *testing.T) {
 	}
 
 	// 2. Initialize Scheduler
+	monEvents := make(chan models.Event, 10)
+	credEvents := make(chan models.Event, 10)
 	outChan := make(chan []*models.Monitor, 10)
 	// Low tick interval for fast testing
-	s := scheduler.NewScheduler(outChan, mockPath, 1, 100, 1)
+	s := scheduler.NewScheduler(monEvents, credEvents, outChan, mockPath, 1, 100, 1)
 
 	// 3. Load initial data
 	monitors := []*models.Monitor{
@@ -96,7 +98,7 @@ Loop:
 
 	// 6. Test dynamic update via Event
 	newMon := &models.Monitor{ID: 4, IPAddress: "172.16.0.1", PollingIntervalSeconds: 1, PluginID: "icmp"}
-	s.InputChan <- models.Event{
+	monEvents <- models.Event{
 		Type:    models.EventCreate,
 		Payload: newMon,
 	}

@@ -3,10 +3,12 @@ package poller
 import (
 	"context"
 	"log"
+	"os"
+	"path/filepath"
+
 	"nms/pkg/models"
 	"nms/pkg/plugin"
 	"nms/pkg/worker"
-	"path/filepath"
 )
 
 // Poller manages plugin execution for polling monitors.
@@ -37,12 +39,35 @@ func NewPoller(pluginDir string, workerCount int, inputChan <-chan []*models.Mon
 	return p
 }
 
-// loadPlugins scans the plugin directory and populates the plugins map
+// loadPlugins scans the plugin directory and populates the plugins map.
+// Each subdirectory is a plugin; the binary must be named the same as the directory.
 func (p *Poller) loadPlugins() {
-	log.Printf("[Poller] Loading plugins from: %s", p.pluginDir)
-	// TODO: Scan pluginDir and populate p.plugins map dynamically
-	// For now, manually add known plugins
-	p.plugins["winrm"] = filepath.Join(p.pluginDir, "winrm", "winrm")
+	log.Printf("[Poller] Scanning plugins from: %s", p.pluginDir)
+
+	entries, err := os.ReadDir(p.pluginDir)
+	if err != nil {
+		log.Printf("[Poller] Failed to scan plugin directory: %v", err)
+		return
+	}
+
+	for _, entry := range entries {
+		pluginID := entry.Name()
+		var binPath string
+
+		if entry.IsDir() {
+			// Option 1: pluginDir/ID/ID
+			binPath = filepath.Join(p.pluginDir, pluginID, pluginID)
+			if _, err := os.Stat(binPath); err != nil {
+				continue
+			}
+		} else {
+			// Option 2: pluginDir/ID
+			binPath = filepath.Join(p.pluginDir, pluginID)
+		}
+
+		p.plugins[pluginID] = binPath
+		log.Printf("[Poller] Loaded plugin: %s -> %s", pluginID, binPath)
+	}
 	log.Printf("[Poller] Loaded %d plugins", len(p.plugins))
 }
 

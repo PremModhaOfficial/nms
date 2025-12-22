@@ -7,8 +7,10 @@ import (
 )
 
 func TestLoadCache(t *testing.T) {
+	monChan := make(chan models.Event, 10)
+	credChan := make(chan models.Event, 10)
 	outChan := make(chan []*models.Monitor, 10)
-	s := NewScheduler(outChan, "/usr/bin/fping", 5, 500, 2)
+	s := NewScheduler(monChan, credChan, outChan, "/usr/bin/fping", 5, 500, 2)
 
 	monitors := []*models.Monitor{
 		{ID: 1, IPAddress: "127.0.0.1", PollingIntervalSeconds: 60},
@@ -42,13 +44,15 @@ func TestLoadCache(t *testing.T) {
 	}
 }
 
-func TestProcessEvent(t *testing.T) {
+func TestProcessMonitorEvent(t *testing.T) {
+	monChan := make(chan models.Event, 10)
+	credChan := make(chan models.Event, 10)
 	outChan := make(chan []*models.Monitor, 10)
-	s := NewScheduler(outChan, "/usr/bin/fping", 5, 500, 2)
+	s := NewScheduler(monChan, credChan, outChan, "/usr/bin/fping", 5, 500, 2)
 
 	// Test Create Monitor
 	mon := &models.Monitor{ID: 10, IPAddress: "10.0.0.1", PollingIntervalSeconds: 10}
-	s.processEvent(models.Event{
+	s.processMonitorEvent(models.Event{
 		Type:    models.EventCreate,
 		Payload: mon,
 	})
@@ -62,7 +66,7 @@ func TestProcessEvent(t *testing.T) {
 
 	// Test Update Monitor
 	monUpdated := &models.Monitor{ID: 10, IPAddress: "10.0.0.2", PollingIntervalSeconds: 20}
-	s.processEvent(models.Event{
+	s.processMonitorEvent(models.Event{
 		Type:    models.EventUpdate,
 		Payload: monUpdated,
 	})
@@ -71,9 +75,25 @@ func TestProcessEvent(t *testing.T) {
 		t.Errorf("expected IP 10.0.0.2, got %s", s.monitors[10].Monitor.IPAddress)
 	}
 
+	// Test Delete Monitor
+	s.processMonitorEvent(models.Event{
+		Type:    models.EventDelete,
+		Payload: mon,
+	})
+	if len(s.monitors) != 0 {
+		t.Errorf("expected 0 monitors, got %d", len(s.monitors))
+	}
+}
+
+func TestProcessCredentialEvent(t *testing.T) {
+	monChan := make(chan models.Event, 10)
+	credChan := make(chan models.Event, 10)
+	outChan := make(chan []*models.Monitor, 10)
+	s := NewScheduler(monChan, credChan, outChan, "/usr/bin/fping", 5, 500, 2)
+
 	// Test Create Cred
 	cred := &models.CredentialProfile{ID: 5, Name: "Admin"}
-	s.processEvent(models.Event{
+	s.processCredentialEvent(models.Event{
 		Type:    models.EventCreate,
 		Payload: cred,
 	})
@@ -84,17 +104,18 @@ func TestProcessEvent(t *testing.T) {
 		t.Errorf("expected Name Admin, got %s", s.creds[5].Name)
 	}
 
-	// Test Delete Monitor
-	s.processEvent(models.Event{
-		Type:    models.EventDelete,
-		Payload: mon,
+	// Test Update Cred
+	credUpdated := &models.CredentialProfile{ID: 5, Name: "SuperAdmin"}
+	s.processCredentialEvent(models.Event{
+		Type:    models.EventUpdate,
+		Payload: credUpdated,
 	})
-	if len(s.monitors) != 0 {
-		t.Errorf("expected 0 monitors, got %d", len(s.monitors))
+	if s.creds[5].Name != "SuperAdmin" {
+		t.Errorf("expected Name SuperAdmin, got %s", s.creds[5].Name)
 	}
 
 	// Test Delete Cred
-	s.processEvent(models.Event{
+	s.processCredentialEvent(models.Event{
 		Type:    models.EventDelete,
 		Payload: cred,
 	})
