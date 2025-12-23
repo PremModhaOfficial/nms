@@ -45,6 +45,7 @@ type Device struct {
 	ID                 int64             `gorm:"primaryKey;autoIncrement" json:"id"`
 	DiscoveryProfileID int64             `gorm:"not null" json:"discovery_profile_id" binding:"required"`
 	DiscoveryProfile   *DiscoveryProfile `gorm:"foreignKey:DiscoveryProfileID" json:"discovery_profile,omitempty"`
+	Hostname           string            `json:"hostname"`
 	IPAddress          string            `gorm:"not null;type:inet" json:"ip_address" binding:"required,ip"`
 	Port               int               `gorm:"not null" json:"port" binding:"required"`
 	Status             string            `gorm:"default:'new'" json:"status"`

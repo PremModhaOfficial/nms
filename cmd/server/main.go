@@ -6,11 +6,10 @@ import (
 	"os"
 
 	"nms/pkg/api"
-	"nms/pkg/communication"
 	"nms/pkg/database"
-	"nms/pkg/datawriter"
 	"nms/pkg/discovery"
 	"nms/pkg/models"
+	"nms/pkg/persistence"
 	"nms/pkg/plugin"
 	"nms/pkg/poller"
 	"nms/pkg/scheduler"
@@ -68,26 +67,34 @@ func main() {
 	monitorChan := make(chan models.Event, 100)
 	credentialChan := make(chan models.Event, 100)
 	discProfileChan := make(chan models.Event, 100)
-	deviceChan := make(chan models.Event, 100)
 	pollResultChan := make(chan []plugin.Result, 100)
 	discResultChan := make(chan plugin.Result, 100)
 	schedulerToPollerChan := make(chan []*models.Monitor, 10)
+	provisioningChan := make(chan models.Event, 100)
+
+	// New request-reply channels for CRUD and metrics
+	crudRequestChan := make(chan models.Request, 100)
+	metricRequestChan := make(chan models.Request, 100)
 
 	// ══════════════════════════════════════════════════════════════
-	// REPOSITORIES - Base and Publishing wrappers
+	// REPOSITORIES - All owned by DataWriter (service layer)
 	// ══════════════════════════════════════════════════════════════
-	baseCredRepo := database.NewGormRepository[models.CredentialProfile](db)
-	baseMonRepo := database.NewGormRepository[models.Monitor](db)
-	baseDiscProfileRepo := database.NewPreloadingDiscoveryProfileRepo(db) // Auto-preloads CredentialProfile
-	baseDeviceRepo := database.NewGormRepository[models.Device](db)
-	baseMetricRepo := database.NewGormRepository[models.Metric](db)
-	metricRepo := database.NewMetricRepository(baseMetricRepo)
+	credRepo := database.NewGormRepository[models.CredentialProfile](db)
+	monRepo := database.NewGormRepository[models.Monitor](db)
+	discProfileRepo := database.NewGormRepository[models.DiscoveryProfile](db)
+	deviceRepo := database.NewGormRepository[models.Device](db)
 
-	// Publishing wrappers for EDA - just channels, no DB dependencies
-	credRepo := communication.NewPublishingRepo[models.CredentialProfile](baseCredRepo, credentialChan)
-	monRepo := communication.NewPublishingRepo[models.Monitor](baseMonRepo, monitorChan)
-	discProfileRepo := communication.NewPublishingRepo[models.DiscoveryProfile](baseDiscProfileRepo, discProfileChan)
-	deviceRepo := communication.NewPublishingRepo[models.Device](baseDeviceRepo, deviceChan)
+	// Get raw sql.DB for MetricRepository (uses prepared statements directly)
+	sqlDB, err := db.DB()
+	if err != nil {
+		slog.Error("Failed to get sql.DB from GORM", "error", err)
+		os.Exit(1)
+	}
+	metricRepo, err := database.NewMetricRepository(sqlDB)
+	if err != nil {
+		slog.Error("Failed to create MetricRepository", "error", err)
+		os.Exit(1)
+	}
 
 	// ══════════════════════════════════════════════════════════════
 	// SERVICES
@@ -116,23 +123,38 @@ func main() {
 		config.DiscoveryWorkerConcurrency,
 	)
 
-	dataWriter := datawriter.NewWriter(
+	// MetricsService handles high-volume poll results and metric queries
+	metricsWriter := persistence.NewMetricsService(
 		pollResultChan,
-		discResultChan,
+		metricRequestChan,
+		metricRepo,
 		db,
-		deviceRepo,
+	)
+
+	// EntityService handles CRUD, discovery provisioning, and commands
+	entityWriter := persistence.NewEntityService(
+		discResultChan,
+		provisioningChan,
+		crudRequestChan,
+		db,
+		credRepo,
 		monRepo,
+		deviceRepo,
+		discProfileRepo,
+		discProfileChan,
+		monitorChan,
+		credentialChan,
 	)
 
 	// ══════════════════════════════════════════════════════════════
 	// INITIAL CACHE LOAD
 	// ══════════════════════════════════════════════════════════════
 	ctx := context.Background()
-	initialMonitors, err := baseMonRepo.List(ctx)
+	initialMonitors, err := monRepo.List(ctx)
 	if err != nil {
 		slog.Error("Failed to list monitors for scheduler", "error", err)
 	}
-	initialCreds, err := baseCredRepo.List(ctx)
+	initialCreds, err := credRepo.List(ctx)
 	if err != nil {
 		slog.Error("Failed to list credentials for scheduler", "error", err)
 	}
@@ -145,16 +167,8 @@ func main() {
 	go sched.Run(ctx)
 	go poll.Run(ctx)
 	go discService.Start(ctx)
-	go dataWriter.Run(ctx)
-
-	// ══════════════════════════════════════════════════════════════
-	// API HANDLERS
-	// ══════════════════════════════════════════════════════════════
-	credHandler := api.NewCrudHandler[models.CredentialProfile](credRepo)
-	monHandler := api.NewCrudHandler[models.Monitor](monRepo)
-	discProfileHandler := api.NewCrudHandler[models.DiscoveryProfile](discProfileRepo)
-	deviceHandler := api.NewCrudHandler[models.Device](baseDeviceRepo) // Read-only, no publishing
-	metricHandler := api.NewMetricHandler(metricRepo)
+	go metricsWriter.Run(ctx)
+	go entityWriter.Run(ctx)
 
 	// ══════════════════════════════════════════════════════════════
 	// ROUTER SETUP
@@ -164,15 +178,19 @@ func main() {
 	// Public routes (no auth)
 	r.POST("/login", api.LoginHandler)
 
-	// Protected routes
+	// Protected routes - all use channels, no repo dependencies
 	apiGroup := r.Group("/api/v1")
 	apiGroup.Use(api.JWTMiddleware())
 	{
-		credHandler.RegisterRoutes(apiGroup, "/credentials")
-		monHandler.RegisterRoutes(apiGroup, "/monitors")
-		discProfileHandler.RegisterRoutes(apiGroup, "/discovery_profiles")
-		deviceHandler.RegisterRoutes(apiGroup, "/devices")
-		metricHandler.RegisterRoutes(apiGroup)
+		api.RegisterEntityRoutes[models.CredentialProfile](apiGroup, "/credentials", "CredentialProfile", crudRequestChan)
+		api.RegisterEntityRoutes[models.Monitor](apiGroup, "/monitors", "Monitor", crudRequestChan)
+		api.RegisterEntityRoutes[models.DiscoveryProfile](apiGroup, "/discovery_profiles", "DiscoveryProfile", crudRequestChan)
+		api.RegisterEntityRoutes[models.Device](apiGroup, "/devices", "Device", crudRequestChan)
+		api.RegisterMetricsRoute(apiGroup, metricRequestChan)
+
+		// Manual provisioning endpoints (zero repository dependencies)
+		apiGroup.POST("/discovery_profiles/:id/run", api.RunDiscoveryHandler(provisioningChan))
+		apiGroup.POST("/devices/:id/provision", api.ProvisionDeviceHandler(provisioningChan))
 	}
 
 	// ══════════════════════════════════════════════════════════════

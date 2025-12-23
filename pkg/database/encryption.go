@@ -1,25 +1,13 @@
 package database
 
 import (
-	"log"
-	"os"
+	"nms/pkg/models"
 
 	"github.com/firdasafridi/gocrypt"
 )
 
-var secretKey string
-
-func init() {
-	secretKey = os.Getenv("NMS_SECRET")
-	if secretKey == "" {
-		// Default key for development (64 bytes)
-		secretKey = "1234567890123456789012345678901212345678901234567890123456789012" 
-		log.Println("WARNING: NMS_SECRET not set. Using default insecure key.")
-	}
-}
-
-// EncryptStruct encrypts the fields tagged with gocrypt
-func EncryptStruct[T any](entity T) (T, error) {
+// EncryptStruct encrypts the fields tagged with gocrypt using the provided secret key.
+func EncryptStruct[T any](entity T, secretKey string) (T, error) {
 	aesOpt, err := gocrypt.NewAESOpt(secretKey)
 	if err != nil {
 		return entity, err
@@ -37,8 +25,8 @@ func EncryptStruct[T any](entity T) (T, error) {
 	return entity, nil
 }
 
-// DecryptStruct decrypts the fields tagged with gocrypt
-func DecryptStruct[T any](entity T) (T, error) {
+// DecryptStruct decrypts the fields tagged with gocrypt using the provided secret key.
+func DecryptStruct[T any](entity T, secretKey string) (T, error) {
 	aesOpt, err := gocrypt.NewAESOpt(secretKey)
 	if err != nil {
 		return entity, err
@@ -54,4 +42,24 @@ func DecryptStruct[T any](entity T) (T, error) {
 		return entity, err
 	}
 	return entity, nil
+}
+
+// DecryptPayload decrypts a CredentialProfile and returns the raw payload string.
+// The payload format is protocol-specific; plugins parse it themselves.
+func DecryptPayload(cred *models.CredentialProfile, secretKey string) (string, error) {
+	if cred == nil {
+		return "", nil
+	}
+
+	decrypted, err := DecryptStruct(*cred, secretKey)
+	if err != nil {
+		// Fallback: If it's already raw JSON (starts with {), use it as is
+		// This handles unencrypted data in the DB during development/migration
+		if len(cred.Payload) > 0 && cred.Payload[0] == '{' {
+			return cred.Payload, nil
+		}
+		return "", err
+	}
+
+	return decrypted.Payload, nil
 }

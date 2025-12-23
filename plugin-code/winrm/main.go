@@ -6,7 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"strings"
 	"sync"
@@ -58,11 +58,12 @@ var (
 
 func main() {
 	flag.Parse()
-	log.SetOutput(os.Stderr)
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
 
 	inputData, err := io.ReadAll(os.Stdin)
 	if err != nil {
-		log.Fatalf("Failed to read Stdin: %v", err)
+		slog.Error("Failed to read Stdin", "error", err)
+		os.Exit(1)
 	}
 	if len(inputData) == 0 {
 		return
@@ -70,7 +71,8 @@ func main() {
 
 	var inputs []Input
 	if err := json.Unmarshal(inputData, &inputs); err != nil {
-		log.Fatalf("Invalid JSON input: %v", err)
+		slog.Error("Invalid JSON input", "error", err)
+		os.Exit(1)
 	}
 
 	outputs := make([]Output, len(inputs))
@@ -88,7 +90,8 @@ func main() {
 
 	encoder := json.NewEncoder(os.Stdout)
 	if err := encoder.Encode(outputs); err != nil {
-		log.Fatalf("Failed to write output: %v", err)
+		slog.Error("Failed to write output", "error", err)
+		os.Exit(1)
 	}
 }
 

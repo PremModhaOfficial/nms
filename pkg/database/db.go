@@ -2,8 +2,9 @@ package database
 
 import (
 	"fmt"
-	"log"
-	"os"
+	"log/slog"
+
+	"nms/pkg/config"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -11,42 +12,19 @@ import (
 )
 
 // Connect initializes the database connection
-func Connect() (*gorm.DB, error) {
-	// TODO: Load these from config/env
-	host := os.Getenv("DB_HOST")
-	user := os.Getenv("DB_USER")
-	password := os.Getenv("DB_PASSWORD")
-	dbname := os.Getenv("DB_NAME")
-	port := os.Getenv("DB_PORT")
-
-	if host == "" {
-		host = "localhost"
-	}
-	if user == "" {
-		user = "nmslite"
-	}
-	if password == "" {
-		password = "nmslite"
-	}
-	if dbname == "" {
-		dbname = "nmslite"
-	}
-	if port == "" {
-		port = "5432"
-	}
-
+func Connect(cfg *config.Config) (*gorm.DB, error) {
 	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=disable TimeZone=UTC",
-		host, user, password, dbname, port)
+		cfg.DBHost, cfg.DBUser, cfg.DBPassword, cfg.DBName, cfg.DBPort)
 
-	config := &gorm.Config{
+	gormConfig := &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Info),
 	}
 
-	db, err := gorm.Open(postgres.Open(dsn), config)
+	db, err := gorm.Open(postgres.Open(dsn), gormConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
-	log.Println("Connected to database")
+	slog.Info("Connected to database", "component", "Database")
 	return db, nil
 }

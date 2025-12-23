@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"log"
+	"log/slog"
 	"os/exec"
 	"sync"
 )
@@ -37,89 +37,89 @@ func NewPool[T any, R any](workerCount int, poolName string, args ...string) *Po
 }
 
 // Start begins the worker pool (call once at startup)
-func (p *Pool[T, R]) Start(ctx context.Context) {
-	log.Printf("[%s] Starting %d workers", p.poolName, p.workerCount)
+func (pool *Pool[T, R]) Start(ctx context.Context) {
+	slog.Info("Starting worker pool", "component", pool.poolName, "worker_count", pool.workerCount)
 
 	var wg sync.WaitGroup
-	for i := 0; i < p.workerCount; i++ {
+	for i := 0; i < pool.workerCount; i++ {
 		wg.Add(1)
-		go p.worker(ctx, i, &wg)
+		go pool.worker(ctx, i, &wg)
 	}
 
 	// Wait for all workers to finish when context is done
 	go func() {
 		wg.Wait()
-		close(p.resultChan)
-		log.Printf("[%s] All workers stopped", p.poolName)
+		close(pool.resultChan)
+		slog.Info("All workers stopped", "component", pool.poolName)
 	}()
 }
 
 // Submit sends a batch of tasks to the pool with the plugin binary path
-func (p *Pool[T, R]) Submit(binPath string, tasks []T) {
-	p.jobChan <- Job[T]{
+func (pool *Pool[T, R]) Submit(binPath string, tasks []T) {
+	pool.jobChan <- Job[T]{
 		BinPath: binPath,
 		Tasks:   tasks,
 	}
 }
 
 // Results returns the channel for receiving results
-func (p *Pool[T, R]) Results() <-chan []R {
-	return p.resultChan
+func (pool *Pool[T, R]) Results() <-chan []R {
+	return pool.resultChan
 }
 
 // worker processes jobs continuously
-func (p *Pool[T, R]) worker(ctx context.Context, id int, wg *sync.WaitGroup) {
+func (pool *Pool[T, R]) worker(ctx context.Context, id int, wg *sync.WaitGroup) {
 	defer wg.Done()
-	log.Printf("[%s] Worker %d started", p.poolName, id)
+	slog.Info("Worker started", "component", pool.poolName, "worker_id", id)
 
 	for {
 		select {
 		case <-ctx.Done():
-			log.Printf("[%s] Worker %d stopping", p.poolName, id)
+			slog.Info("Worker stopping", "component", pool.poolName, "worker_id", id)
 			return
 
-		case job, ok := <-p.jobChan:
+		case job, ok := <-pool.jobChan:
 			if !ok {
-				log.Printf("[%s] Worker %d: job channel closed", p.poolName, id)
+				slog.Info("Worker job channel closed", "component", pool.poolName, "worker_id", id)
 				return
 			}
 
-			results := p.executePlugin(job)
-			p.resultChan <- results
+			results := pool.executePlugin(job)
+			pool.resultChan <- results
 		}
 	}
 }
 
 // executePlugin runs the plugin binary with the batch of tasks
-func (p *Pool[T, R]) executePlugin(job Job[T]) []R {
-	log.Printf("[%s] Executing %s with %d tasks", p.poolName, job.BinPath, len(job.Tasks))
+func (pool *Pool[T, R]) executePlugin(job Job[T]) []R {
+	slog.Debug("Executing plugin", "component", pool.poolName, "bin_path", job.BinPath, "task_count", len(job.Tasks))
 
 	// Marshal tasks to JSON
 	inputJSON, err := json.Marshal(job.Tasks)
 	if err != nil {
-		log.Printf("[%s] Failed to marshal tasks: %v", p.poolName, err)
+		slog.Error("Failed to marshal tasks", "component", pool.poolName, "error", err)
 		return []R{} // Return empty on error
 	}
 
 	// Execute plugin
-	cmd := exec.Command(job.BinPath, p.args...)
+	cmd := exec.Command(job.BinPath, pool.args...)
 	cmd.Stdin = bytes.NewReader(inputJSON)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		log.Printf("[%s] Plugin %s failed: %v, stderr: %s", p.poolName, job.BinPath, err, stderr.String())
+		slog.Error("Plugin failed", "component", pool.poolName, "bin_path", job.BinPath, "error", err, "stderr", stderr.String())
 		return []R{} // Return empty on error
 	}
 
 	// Parse results
 	var results []R
 	if err := json.Unmarshal(stdout.Bytes(), &results); err != nil {
-		log.Printf("[%s] Failed to parse results: %v", p.poolName, err)
+		slog.Error("Failed to parse results", "component", pool.poolName, "error", err)
 		return []R{} // Return empty on error
 	}
 
-	log.Printf("[%s] Plugin %s returned %d results", p.poolName, job.BinPath, len(results))
+	slog.Debug("Plugin returned results", "component", pool.poolName, "bin_path", job.BinPath, "result_count", len(results))
 	return results
 }

@@ -2,10 +2,11 @@ package poller
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 
+	"nms/pkg/database"
 	"nms/pkg/models"
 	"nms/pkg/plugin"
 	"nms/pkg/worker"
@@ -13,9 +14,10 @@ import (
 
 // Poller manages plugin execution for polling monitors.
 type Poller struct {
-	pool      *worker.Pool[plugin.Task, plugin.Result]
-	pluginDir string
-	plugins   map[string]string // pluginID -> binary path
+	pool          *worker.Pool[plugin.Task, plugin.Result]
+	pluginDir     string
+	plugins       map[string]string // pluginID -> binary path
+	encryptionKey string
 
 	// Input channel: receives batches of monitors from scheduler
 	InputChan <-chan []*models.Monitor
@@ -25,15 +27,16 @@ type Poller struct {
 }
 
 // NewPoller creates a new Poller instance.
-func NewPoller(pluginDir string, workerCount int, inputChan <-chan []*models.Monitor, outputChan chan<- []plugin.Result) *Poller {
+func NewPoller(pluginDir string, encryptionKey string, workerCount int, inputChan <-chan []*models.Monitor, outputChan chan<- []plugin.Result) *Poller {
 	pool := worker.NewPool[plugin.Task, plugin.Result](workerCount, "PollPool")
 
 	p := &Poller{
-		pool:       pool,
-		pluginDir:  pluginDir,
-		plugins:    make(map[string]string),
-		InputChan:  inputChan,
-		OutputChan: outputChan,
+		pool:          pool,
+		pluginDir:     pluginDir,
+		plugins:       make(map[string]string),
+		encryptionKey: encryptionKey,
+		InputChan:     inputChan,
+		OutputChan:    outputChan,
 	}
 	p.loadPlugins()
 	return p
@@ -41,12 +44,12 @@ func NewPoller(pluginDir string, workerCount int, inputChan <-chan []*models.Mon
 
 // loadPlugins scans the plugin directory and populates the plugins map.
 // Each subdirectory is a plugin; the binary must be named the same as the directory.
-func (p *Poller) loadPlugins() {
-	log.Printf("[Poller] Scanning plugins from: %s", p.pluginDir)
+func (poller *Poller) loadPlugins() {
+	slog.Info("Scanning plugins", "component", "Poller", "dir", poller.pluginDir)
 
-	entries, err := os.ReadDir(p.pluginDir)
+	entries, err := os.ReadDir(poller.pluginDir)
 	if err != nil {
-		log.Printf("[Poller] Failed to scan plugin directory: %v", err)
+		slog.Error("Failed to scan plugin directory", "component", "Poller", "error", err)
 		return
 	}
 
@@ -56,60 +59,60 @@ func (p *Poller) loadPlugins() {
 
 		if entry.IsDir() {
 			// Option 1: pluginDir/ID/ID
-			binPath = filepath.Join(p.pluginDir, pluginID, pluginID)
+			binPath = filepath.Join(poller.pluginDir, pluginID, pluginID)
 			if _, err := os.Stat(binPath); err != nil {
 				continue
 			}
 		} else {
 			// Option 2: pluginDir/ID
-			binPath = filepath.Join(p.pluginDir, pluginID)
+			binPath = filepath.Join(poller.pluginDir, pluginID)
 		}
 
-		p.plugins[pluginID] = binPath
-		log.Printf("[Poller] Loaded plugin: %s -> %s", pluginID, binPath)
+		poller.plugins[pluginID] = binPath
+		slog.Info("Loaded plugin", "component", "Poller", "plugin_id", pluginID, "path", binPath)
 	}
-	log.Printf("[Poller] Loaded %d plugins", len(p.plugins))
+	slog.Info("Plugins loaded", "component", "Poller", "count", len(poller.plugins))
 }
 
 // Run starts the poller's main loop.
-func (p *Poller) Run(ctx context.Context) {
-	log.Println("[Poller] Run: Starting main loop")
+func (poller *Poller) Run(ctx context.Context) {
+	slog.Info("Starting main loop", "component", "Poller")
 
 	// Start the worker pool
-	p.pool.Start(ctx)
+	poller.pool.Start(ctx)
 
 	// Start result collector
-	go p.collectResults(ctx)
+	go poller.collectResults(ctx)
 
 	for {
 		select {
 		case <-ctx.Done():
-			log.Println("[Poller] Run: Context cancelled, shutting down")
+			slog.Info("Context cancelled, shutting down", "component", "Poller")
 			return
 
-		case monitors := <-p.InputChan:
-			log.Printf("[Poller] Run: Received %d monitors from scheduler", len(monitors))
+		case monitors := <-poller.InputChan:
+			slog.Info("Received monitors from scheduler", "component", "Poller", "count", len(monitors))
 
 			// Group monitors by PluginID
-			grouped := p.groupByProtocol(monitors)
+			grouped := poller.groupByProtocol(monitors)
 
 			// Submit jobs to pool with binary paths
 			for pluginID, monitorList := range grouped {
-				binPath, exists := p.plugins[pluginID]
+				binPath, exists := poller.plugins[pluginID]
 				if !exists {
-					log.Printf("[Poller] Plugin not found: %s, skipping %d monitors", pluginID, len(monitorList))
+					slog.Warn("Plugin not found", "component", "Poller", "plugin_id", pluginID, "monitor_count", len(monitorList))
 					continue
 				}
 
-				tasks := p.createTasks(monitorList)
-				p.pool.Submit(binPath, tasks)
+				tasks := poller.createTasks(monitorList)
+				poller.pool.Submit(binPath, tasks)
 			}
 		}
 	}
 }
 
 // groupByProtocol groups monitors by their PluginID.
-func (p *Poller) groupByProtocol(monitors []*models.Monitor) map[string][]*models.Monitor {
+func (poller *Poller) groupByProtocol(monitors []*models.Monitor) map[string][]*models.Monitor {
 	grouped := make(map[string][]*models.Monitor)
 	for _, m := range monitors {
 		grouped[m.PluginID] = append(grouped[m.PluginID], m)
@@ -118,13 +121,13 @@ func (p *Poller) groupByProtocol(monitors []*models.Monitor) map[string][]*model
 }
 
 // createTasks converts monitors to plugin.Task
-func (p *Poller) createTasks(monitors []*models.Monitor) []plugin.Task {
+func (poller *Poller) createTasks(monitors []*models.Monitor) []plugin.Task {
 	tasks := make([]plugin.Task, 0, len(monitors))
 	for _, m := range monitors {
 		// Decrypt credentials payload
-		payload, err := plugin.DecryptPayload(m.CredentialProfile)
+		payload, err := database.DecryptPayload(m.CredentialProfile, poller.encryptionKey)
 		if err != nil {
-			log.Printf("[Poller] Failed to decrypt credentials for monitor %d: %v", m.ID, err)
+			slog.Error("Failed to decrypt credentials", "component", "Poller", "monitor_id", m.ID, "error", err)
 			payload = "" // Plugin will handle missing credentials
 		}
 
@@ -140,17 +143,17 @@ func (p *Poller) createTasks(monitors []*models.Monitor) []plugin.Task {
 }
 
 // collectResults aggregates results from pool and sends to OutputChan
-func (p *Poller) collectResults(ctx context.Context) {
+func (poller *Poller) collectResults(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case results, ok := <-p.pool.Results():
+		case results, ok := <-poller.pool.Results():
 			if !ok {
 				return
 			}
 			if len(results) > 0 {
-				p.OutputChan <- results
+				poller.OutputChan <- results
 			}
 		}
 	}

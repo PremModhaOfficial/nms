@@ -2,7 +2,7 @@ package discovery
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"nms/pkg/database"
 	"nms/pkg/models"
 	"nms/pkg/plugin"
 	"nms/pkg/worker"
@@ -25,10 +26,11 @@ type discoveryContext struct {
 // DiscoveryService coordinates the discovery process.
 // It listens for DiscoveryProfile events and manages the DiscoveryPool.
 type DiscoveryService struct {
-	pool      *worker.Pool[plugin.Task, plugin.Result]
-	events    <-chan models.Event  // Reads discovery profile events
-	resultCh  chan<- plugin.Result // Writes discovery results
-	pluginDir string
+	pool          *worker.Pool[plugin.Task, plugin.Result]
+	events        <-chan models.Event  // Reads discovery profile events
+	resultCh      chan<- plugin.Result // Writes discovery results
+	pluginDir     string
+	encryptionKey string
 
 	// Tracks pending discoveries: target IP -> context
 	pendingMu sync.RWMutex
@@ -40,65 +42,67 @@ func NewDiscoveryService(
 	events <-chan models.Event,
 	resultCh chan<- plugin.Result,
 	pluginDir string,
+	encryptionKey string,
 	workerCount int,
 ) *DiscoveryService {
 	pool := worker.NewPool[plugin.Task, plugin.Result](workerCount, "DiscoveryPool", "-discovery")
 	return &DiscoveryService{
-		events:    events,
-		pool:      pool,
-		resultCh:  resultCh,
-		pluginDir: pluginDir,
-		pending:   make(map[string]discoveryContext),
+		events:        events,
+		pool:          pool,
+		resultCh:      resultCh,
+		pluginDir:     pluginDir,
+		encryptionKey: encryptionKey,
+		pending:       make(map[string]discoveryContext),
 	}
 }
 
 // Start initiates the discovery event processor and result collector.
-func (s *DiscoveryService) Start(ctx context.Context) {
-	log.Println("[DiscoveryService] Starting service")
+func (discovery *DiscoveryService) Start(ctx context.Context) {
+	slog.Info("Starting discovery service", "component", "DiscoveryService")
 
 	// Start the worker pool
-	s.pool.Start(ctx)
+	discovery.pool.Start(ctx)
 
 	// Start result collector
-	go s.collectResults(ctx)
+	go discovery.collectResults(ctx)
 
 	// Main event loop
 	for {
 		select {
 		case <-ctx.Done():
-			log.Println("[DiscoveryService] Stopping service")
+			slog.Info("Stopping discovery service", "component", "DiscoveryService")
 			return
-		case event := <-s.events:
-			s.processEvent(ctx, event)
+		case event := <-discovery.events:
+			discovery.processEvent(ctx, event)
 		}
 	}
 }
 
 // processEvent handles CRUD events for DiscoveryProfiles.
-func (s *DiscoveryService) processEvent(ctx context.Context, event models.Event) {
+func (discovery *DiscoveryService) processEvent(ctx context.Context, event models.Event) {
 	profile, ok := event.Payload.(*models.DiscoveryProfile)
 	if !ok {
-		log.Printf("[DiscoveryService] Ignoring event with unexpected payload type")
+		slog.Warn("Ignoring event with unexpected payload type", "component", "DiscoveryService")
 		return
 	}
 
 	switch event.Type {
 	case models.EventCreate, models.EventUpdate:
-		log.Printf("[DiscoveryService] Running discovery for profile: %s", profile.Name)
-		s.runDiscovery(ctx, profile)
+		slog.Info("Running discovery for profile", "component", "DiscoveryService", "profile_name", profile.Name)
+		discovery.runDiscovery(ctx, profile)
 	case models.EventDelete:
-		log.Printf("[DiscoveryService] Profile deleted: %s", profile.Name)
+		slog.Info("Profile deleted", "component", "DiscoveryService", "profile_name", profile.Name)
 		// Nothing to do - discovery is one-shot
 	}
 }
 
 // collectResults listens for results from the worker pool and forwards them.
-func (s *DiscoveryService) collectResults(ctx context.Context) {
+func (discovery *DiscoveryService) collectResults(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case results, ok := <-s.pool.Results():
+		case results, ok := <-discovery.pool.Results():
 			if !ok {
 				return
 			}
@@ -108,67 +112,64 @@ func (s *DiscoveryService) collectResults(ctx context.Context) {
 				}
 
 				// Enrich result with profile context
-				s.pendingMu.RLock()
-				dctx, found := s.pending[res.Target]
-				s.pendingMu.RUnlock()
+				discovery.pendingMu.RLock()
+				dctx, found := discovery.pending[res.Target]
+				discovery.pendingMu.RUnlock()
 
 				if found {
 					res.DiscoveryProfileID = dctx.DiscoveryProfileID
 					res.CredentialProfileID = dctx.CredentialProfileID
 					res.Port = dctx.Port
 
-					log.Printf("[DiscoveryService] SUCCESS: Found device %s at %s", res.Hostname, res.Target)
+					slog.Info("SUCCESS: Found device", "component", "DiscoveryService", "hostname", res.Hostname, "target", res.Target)
 
 					// Clear from pending
-					s.pendingMu.Lock()
-					delete(s.pending, res.Target)
-					s.pendingMu.Unlock()
+					discovery.pendingMu.Lock()
+					delete(discovery.pending, res.Target)
+					discovery.pendingMu.Unlock()
 				}
 
-				s.resultCh <- res // Forward to DataWriter
+				discovery.resultCh <- res // Forward to DataWriter
 			}
 		}
 	}
 }
 
 // runDiscovery expands the profile target and submits tasks to the pool.
-func (s *DiscoveryService) runDiscovery(ctx context.Context, profile *models.DiscoveryProfile) {
+func (discovery *DiscoveryService) runDiscovery(ctx context.Context, profile *models.DiscoveryProfile) {
 	// 1. Expand target to individual IPs
 	ips, err := expandTarget(profile.Target)
 	if err != nil {
-		log.Printf("[DiscoveryService] Failed to expand target %s: %v", profile.Target, err)
+		slog.Error("Failed to expand target", "component", "DiscoveryService", "target", profile.Target, "error", err)
 		return
 	}
 	if len(ips) == 0 {
-		log.Printf("[DiscoveryService] No IPs found for target: %s", profile.Target)
+		slog.Warn("No IPs found for target", "component", "DiscoveryService", "target", profile.Target)
 		return
 	}
-	log.Printf("[DiscoveryService] Expanded %s to %d IPs", profile.Target, len(ips))
+	slog.Info("Expanded target", "component", "DiscoveryService", "target", profile.Target, "ip_count", len(ips))
 
 	// 2. Get credentials (preloaded in event by PreloadingDiscoveryProfileRepo)
 	credProfile := profile.CredentialProfile
 
-	creds, err := plugin.DecryptPayload(credProfile)
+	creds, err := database.DecryptPayload(credProfile, discovery.encryptionKey)
 	if err != nil {
-		log.Printf("[DiscoveryService] Failed to decrypt credentials: %v", err)
+		slog.Error("Failed to decrypt credentials", "component", "DiscoveryService", "error", err)
 		creds = ""
 	}
 
 	// 3. Get binary path from protocol
-	protocol := "winrm" // default
+	var protocol string
 	if credProfile != nil {
 		protocol = credProfile.Protocol
 	}
 
 	// Try pluginDir/protocol (standalone) then pluginDir/protocol/protocol (nested)
-	binPath := filepath.Join(s.pluginDir, protocol)
+	binPath := filepath.Join(discovery.pluginDir, protocol)
 	if _, err := os.Stat(binPath); err != nil {
-		binPath = filepath.Join(s.pluginDir, protocol, protocol)
+		binPath = filepath.Join(discovery.pluginDir, protocol, protocol)
 		if _, err := os.Stat(binPath); err != nil {
-			log.Printf("[DiscoveryService] Plugin not found for protocol %s (tried %s and %s/%s/%s)",
-				protocol,
-				filepath.Join(s.pluginDir, protocol),
-				s.pluginDir, protocol, protocol)
+			slog.Error("Plugin not found for protocol", "component", "DiscoveryService", "protocol", protocol)
 			return
 		}
 	}
@@ -180,11 +181,11 @@ func (s *DiscoveryService) runDiscovery(ctx context.Context, profile *models.Dis
 		Port:                profile.Port,
 	}
 
-	s.pendingMu.Lock()
+	discovery.pendingMu.Lock()
 	for _, ip := range ips {
-		s.pending[ip] = dctx
+		discovery.pending[ip] = dctx
 	}
-	s.pendingMu.Unlock()
+	discovery.pendingMu.Unlock()
 
 	// 5. Build tasks
 	tasks := make([]plugin.Task, 0, len(ips))
@@ -197,8 +198,8 @@ func (s *DiscoveryService) runDiscovery(ctx context.Context, profile *models.Dis
 	}
 
 	// 6. Submit to pool
-	log.Printf("[DiscoveryService] Submitting %d tasks to pool using %s", len(tasks), binPath)
-	s.pool.Submit(binPath, tasks)
+	slog.Info("Submitting tasks to pool", "component", "DiscoveryService", "task_count", len(tasks), "bin_path", binPath)
+	discovery.pool.Submit(binPath, tasks)
 }
 
 // expandTarget expands a target string to individual IPs.
