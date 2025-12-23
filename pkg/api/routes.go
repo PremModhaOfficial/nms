@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"strconv"
 
-	"nms/pkg/database"
 	"nms/pkg/models"
 	"nms/pkg/persistence"
 
@@ -20,8 +19,8 @@ func RegisterEntityRoutes[T any](
 	reqCh chan<- models.Request,
 ) {
 	r := g.Group(path)
-	r.GET("", listHandler(entityType, reqCh))
-	r.GET("/:id", getHandler(entityType, reqCh))
+	r.GET("", listHandler[T](entityType, encryptionKey, reqCh))
+	r.GET("/:id", getHandler[T](entityType, encryptionKey, reqCh))
 	r.POST("", createHandler[T](entityType, encryptionKey, reqCh))
 	r.PUT("/:id", updateHandler[T](entityType, encryptionKey, reqCh))
 	r.DELETE("/:id", deleteHandler(entityType, reqCh))
@@ -33,7 +32,7 @@ func RegisterMetricsRoute(g *gin.RouterGroup, reqCh chan<- models.Request) {
 }
 
 // listHandler returns all entities
-func listHandler(entityType string, reqCh chan<- models.Request) gin.HandlerFunc {
+func listHandler[T any](entityType string, encryptionKey string, reqCh chan<- models.Request) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		replyCh := make(chan models.Response, 1)
 		reqCh <- models.Request{
@@ -47,12 +46,23 @@ func listHandler(entityType string, reqCh chan<- models.Request) gin.HandlerFunc
 			respondError(c, http.StatusInternalServerError, resp.Error.Error())
 			return
 		}
+
+		// Decrypt results
+		if items, ok := resp.Data.([]*T); ok {
+			decryptedItems := make([]*T, len(items))
+			for i, item := range items {
+				dec, _ := DecryptStruct(*item, encryptionKey)
+				decryptedItems[i] = &dec
+			}
+			c.JSON(http.StatusOK, decryptedItems)
+			return
+		}
 		c.JSON(http.StatusOK, resp.Data)
 	}
 }
 
 // getHandler returns a single entity by ID
-func getHandler(entityType string, reqCh chan<- models.Request) gin.HandlerFunc {
+func getHandler[T any](entityType string, encryptionKey string, reqCh chan<- models.Request) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 		if err != nil {
@@ -73,6 +83,13 @@ func getHandler(entityType string, reqCh chan<- models.Request) gin.HandlerFunc 
 			respondError(c, http.StatusNotFound, "record not found")
 			return
 		}
+
+		// Decrypt result
+		if item, ok := resp.Data.(*T); ok {
+			dec, _ := DecryptStruct(*item, encryptionKey)
+			c.JSON(http.StatusOK, &dec)
+			return
+		}
 		c.JSON(http.StatusOK, resp.Data)
 	}
 }
@@ -87,7 +104,7 @@ func createHandler[T any](entityType string, encryptionKey string, reqCh chan<- 
 		}
 
 		// Encrypt sensitive fields if present
-		encryptedEntity, err := database.EncryptStruct(entity, encryptionKey)
+		encryptedEntity, err := EncryptStruct(entity, encryptionKey)
 		if err != nil {
 			respondError(c, http.StatusInternalServerError, "encryption failed: "+err.Error())
 			return
@@ -104,6 +121,13 @@ func createHandler[T any](entityType string, encryptionKey string, reqCh chan<- 
 		resp := <-replyCh
 		if resp.Error != nil {
 			respondError(c, http.StatusInternalServerError, resp.Error.Error())
+			return
+		}
+
+		// Decrypt for response
+		if item, ok := resp.Data.(*T); ok {
+			dec, _ := DecryptStruct(*item, encryptionKey)
+			c.JSON(http.StatusCreated, &dec)
 			return
 		}
 		c.JSON(http.StatusCreated, resp.Data)
@@ -126,7 +150,7 @@ func updateHandler[T any](entityType string, encryptionKey string, reqCh chan<- 
 		}
 
 		// Encrypt sensitive fields if present
-		encryptedEntity, err := database.EncryptStruct(entity, encryptionKey)
+		encryptedEntity, err := EncryptStruct(entity, encryptionKey)
 		if err != nil {
 			respondError(c, http.StatusInternalServerError, "encryption failed: "+err.Error())
 			return
@@ -144,6 +168,13 @@ func updateHandler[T any](entityType string, encryptionKey string, reqCh chan<- 
 		resp := <-replyCh
 		if resp.Error != nil {
 			respondError(c, http.StatusInternalServerError, resp.Error.Error())
+			return
+		}
+
+		// Decrypt for response
+		if item, ok := resp.Data.(*T); ok {
+			dec, _ := DecryptStruct(*item, encryptionKey)
+			c.JSON(http.StatusOK, &dec)
 			return
 		}
 		c.JSON(http.StatusOK, resp.Data)

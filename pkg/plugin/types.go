@@ -7,10 +7,10 @@ import "encoding/json"
 
 // Task is the input sent to a plugin binary.
 type Task struct {
-	MonitorID   int64  `json:"monitor_id,omitempty"`  // Optional: for tracking results back to a monitor
-	Target      string `json:"target"`                // IP address or hostname
-	Port        int    `json:"port"`                  // Target port
-	Credentials string `json:"credentials,omitempty"` // Decrypted JSON payload (protocol-specific)
+	MonitorID   int64           `json:"monitor_id,omitempty"`  // Optional: for tracking results back to a monitor
+	Target      string          `json:"target"`                // IP address or hostname
+	Port        int             `json:"port"`                  // Target port
+	Credentials json.RawMessage `json:"credentials,omitempty"` // Decrypted JSON payload (protocol-specific)
 
 	// Internal fields for discovery context (not sent to plugin)
 	DiscoveryProfileID  int64 `json:"-"`

@@ -4,13 +4,13 @@ import (
 	"context"
 	"log/slog"
 	"net"
+	"nms/pkg/api"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 
-	"nms/pkg/database"
 	"nms/pkg/models"
 	"nms/pkg/plugin"
 	"nms/pkg/worker"
@@ -107,28 +107,30 @@ func (discovery *DiscoveryService) collectResults(ctx context.Context) {
 				return
 			}
 			for _, res := range results {
-				if !res.Success || res.Hostname == "" {
+				// Always clear from pending to prevent memory leak
+				discovery.pendingMu.Lock()
+				dctx, found := discovery.pending[res.Target]
+				delete(discovery.pending, res.Target)
+				discovery.pendingMu.Unlock()
+
+				// Log and skip failures
+				if !res.Success {
+					slog.Warn("FAILED: Discovery attempt unsuccessful", "component", "DiscoveryService", "target", res.Target, "error", res.Error)
+					continue
+				}
+				if res.Hostname == "" {
+					slog.Warn("FAILED: No hostname returned", "component", "DiscoveryService", "target", res.Target)
 					continue
 				}
 
 				// Enrich result with profile context
-				discovery.pendingMu.RLock()
-				dctx, found := discovery.pending[res.Target]
-				discovery.pendingMu.RUnlock()
-
 				if found {
 					res.DiscoveryProfileID = dctx.DiscoveryProfileID
 					res.CredentialProfileID = dctx.CredentialProfileID
 					res.Port = dctx.Port
-
-					slog.Info("SUCCESS: Found device", "component", "DiscoveryService", "hostname", res.Hostname, "target", res.Target)
-
-					// Clear from pending
-					discovery.pendingMu.Lock()
-					delete(discovery.pending, res.Target)
-					discovery.pendingMu.Unlock()
 				}
 
+				slog.Info("SUCCESS: Found device", "component", "DiscoveryService", "hostname", res.Hostname, "target", res.Target)
 				discovery.resultCh <- res // Forward to DataWriter
 			}
 		}
@@ -152,10 +154,10 @@ func (discovery *DiscoveryService) runDiscovery(ctx context.Context, profile *mo
 	// 2. Get credentials (preloaded in event by PreloadingDiscoveryProfileRepo)
 	credProfile := profile.CredentialProfile
 
-	creds, err := database.DecryptPayload(credProfile, discovery.encryptionKey)
+	creds, err := api.DecryptPayload(credProfile, discovery.encryptionKey)
 	if err != nil {
 		slog.Error("Failed to decrypt credentials", "component", "DiscoveryService", "error", err)
-		creds = ""
+		creds = nil
 	}
 
 	// 3. Get binary path from protocol

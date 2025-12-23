@@ -45,14 +45,29 @@
             }
           ],
           "request": {
-            "auth": { "type": "noauth" },
+            "auth": {
+              "type": "noauth"
+            },
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n    \"username\": \"admin\",\n    \"password\": \"admin\"\n}"
             },
-            "url": { "raw": "{{base_url}}/login", "host": ["{{base_url}}"], "path": ["login"] }
+            "url": {
+              "raw": "{{base_url}}/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "login"
+              ]
+            }
           }
         }
       ]
@@ -64,45 +79,108 @@
           "name": "List Credentials",
           "request": {
             "method": "GET",
-            "url": { "raw": "{{base_url}}/api/v1/credentials", "host": ["{{base_url}}"], "path": ["api", "v1", "credentials"] }
+            "url": {
+              "raw": "{{base_url}}/api/v1/credentials",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credentials"
+              ]
+            }
           }
         },
         {
           "name": "Get Credential by ID",
           "request": {
             "method": "GET",
-            "url": { "raw": "{{base_url}}/api/v1/credentials/1", "host": ["{{base_url}}"], "path": ["api", "v1", "credentials", "1"] }
+            "url": {
+              "raw": "{{base_url}}/api/v1/credentials/1",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credentials",
+                "1"
+              ]
+            }
           }
         },
         {
           "name": "Create Credential",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n    \"name\": \"Windows Admin\",\n    \"description\": \"Admin credentials for Windows servers\",\n    \"protocol\": \"winrm\",\n    \"payload\": \"{\\\"username\\\": \\\"admin\\\", \\\"password\\\": \\\"secret\\\"}\"\n}"
             },
-            "url": { "raw": "{{base_url}}/api/v1/credentials", "host": ["{{base_url}}"], "path": ["api", "v1", "credentials"] }
+            "url": {
+              "raw": "{{base_url}}/api/v1/credentials",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credentials"
+              ]
+            }
           }
         },
         {
           "name": "Update Credential",
           "request": {
             "method": "PUT",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n    \"name\": \"Windows Admin Updated\",\n    \"description\": \"Updated description\",\n    \"protocol\": \"winrm\",\n    \"payload\": \"{\\\"username\\\": \\\"newadmin\\\", \\\"password\\\": \\\"newsecret\\\"}\"\n}"
             },
-            "url": { "raw": "{{base_url}}/api/v1/credentials/1", "host": ["{{base_url}}"], "path": ["api", "v1", "credentials", "1"] }
+            "url": {
+              "raw": "{{base_url}}/api/v1/credentials/1",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credentials",
+                "1"
+              ]
+            }
           }
         },
         {
           "name": "Delete Credential",
           "request": {
             "method": "DELETE",
-            "url": { "raw": "{{base_url}}/api/v1/credentials/1", "host": ["{{base_url}}"], "path": ["api", "v1", "credentials", "1"] }
+            "url": {
+              "raw": "{{base_url}}/api/v1/credentials/1",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credentials",
+                "1"
+              ]
+            }
           }
         }
       ]
@@ -114,45 +192,108 @@
           "name": "List Monitors",
           "request": {
             "method": "GET",
-            "url": { "raw": "{{base_url}}/api/v1/monitors", "host": ["{{base_url}}"], "path": ["api", "v1", "monitors"] }
+            "url": {
+              "raw": "{{base_url}}/api/v1/monitors",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "monitors"
+              ]
+            }
           }
         },
         {
           "name": "Get Monitor by ID",
           "request": {
             "method": "GET",
-            "url": { "raw": "{{base_url}}/api/v1/monitors/1", "host": ["{{base_url}}"], "path": ["api", "v1", "monitors", "1"] }
+            "url": {
+              "raw": "{{base_url}}/api/v1/monitors/1",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "monitors",
+                "1"
+              ]
+            }
           }
         },
         {
           "name": "Create Monitor",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
-              "raw": "{\n    \"hostname\": \"server-01\",\n    \"ip_address\": \"192.168.1.10\",\n    \"plugin_id\": \"winrm\",\n    \"port\": 5985,\n    \"credential_profile_id\": 1,\n    \"discovery_profile_id\": 1,\n    \"polling_interval_seconds\": 60\n}"
+              "raw": "{\n    \"hostname\": \"server-01\",\n    \"ip_address\": \"192.168.1.10\",\n    \"plugin_id\": \"winrm\",\n    \"port\": 5985,\n    \"credential_profile_id\": 1,\n    \"discovery_profile_id\": 1,\n    \"polling_interval_seconds\": 60,\n    \"should_ping\": true\n}"
             },
-            "url": { "raw": "{{base_url}}/api/v1/monitors", "host": ["{{base_url}}"], "path": ["api", "v1", "monitors"] }
+            "url": {
+              "raw": "{{base_url}}/api/v1/monitors",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "monitors"
+              ]
+            }
           }
         },
         {
           "name": "Update Monitor",
           "request": {
             "method": "PUT",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
-              "raw": "{\n    \"hostname\": \"server-01-updated\",\n    \"ip_address\": \"192.168.1.10\",\n    \"plugin_id\": \"winrm\",\n    \"port\": 5985,\n    \"credential_profile_id\": 1,\n    \"discovery_profile_id\": 1,\n    \"polling_interval_seconds\": 120\n}"
+              "raw": "{\n    \"hostname\": \"server-01-updated\",\n    \"ip_address\": \"192.168.1.10\",\n    \"plugin_id\": \"winrm\",\n    \"port\": 5985,\n    \"credential_profile_id\": 1,\n    \"discovery_profile_id\": 1,\n    \"polling_interval_seconds\": 120,\n    \"should_ping\": false\n}"
             },
-            "url": { "raw": "{{base_url}}/api/v1/monitors/1", "host": ["{{base_url}}"], "path": ["api", "v1", "monitors", "1"] }
+            "url": {
+              "raw": "{{base_url}}/api/v1/monitors/1",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "monitors",
+                "1"
+              ]
+            }
           }
         },
         {
           "name": "Delete Monitor",
           "request": {
             "method": "DELETE",
-            "url": { "raw": "{{base_url}}/api/v1/monitors/1", "host": ["{{base_url}}"], "path": ["api", "v1", "monitors", "1"] }
+            "url": {
+              "raw": "{{base_url}}/api/v1/monitors/1",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "monitors",
+                "1"
+              ]
+            }
           }
         }
       ]
@@ -164,45 +305,127 @@
           "name": "List Discovery Profiles",
           "request": {
             "method": "GET",
-            "url": { "raw": "{{base_url}}/api/v1/discovery_profiles", "host": ["{{base_url}}"], "path": ["api", "v1", "discovery_profiles"] }
+            "url": {
+              "raw": "{{base_url}}/api/v1/discovery_profiles",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "discovery_profiles"
+              ]
+            }
           }
         },
         {
           "name": "Get Discovery Profile by ID",
           "request": {
             "method": "GET",
-            "url": { "raw": "{{base_url}}/api/v1/discovery_profiles/1", "host": ["{{base_url}}"], "path": ["api", "v1", "discovery_profiles", "1"] }
+            "url": {
+              "raw": "{{base_url}}/api/v1/discovery_profiles/1",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "discovery_profiles",
+                "1"
+              ]
+            }
           }
         },
         {
           "name": "Create Discovery Profile",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n    \"name\": \"Office Network\",\n    \"target\": \"192.168.1.0/24\",\n    \"port\": 5985,\n    \"credential_profile_id\": 1,\n    \"auto_provision\": true,\n    \"auto_run\": true\n}"
             },
-            "url": { "raw": "{{base_url}}/api/v1/discovery_profiles", "host": ["{{base_url}}"], "path": ["api", "v1", "discovery_profiles"] }
+            "url": {
+              "raw": "{{base_url}}/api/v1/discovery_profiles",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "discovery_profiles"
+              ]
+            }
           }
         },
         {
           "name": "Update Discovery Profile",
           "request": {
             "method": "PUT",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n    \"name\": \"Office Network Updated\",\n    \"target\": \"192.168.2.0/24\",\n    \"port\": 5985,\n    \"credential_profile_id\": 1,\n    \"auto_provision\": false,\n    \"auto_run\": false\n}"
             },
-            "url": { "raw": "{{base_url}}/api/v1/discovery_profiles/1", "host": ["{{base_url}}"], "path": ["api", "v1", "discovery_profiles", "1"] }
+            "url": {
+              "raw": "{{base_url}}/api/v1/discovery_profiles/1",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "discovery_profiles",
+                "1"
+              ]
+            }
           }
         },
         {
           "name": "Delete Discovery Profile",
           "request": {
             "method": "DELETE",
-            "url": { "raw": "{{base_url}}/api/v1/discovery_profiles/1", "host": ["{{base_url}}"], "path": ["api", "v1", "discovery_profiles", "1"] }
+            "url": {
+              "raw": "{{base_url}}/api/v1/discovery_profiles/1",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "discovery_profiles",
+                "1"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Run Discovery",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/api/v1/discovery_profiles/1/run",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "discovery_profiles",
+                "1",
+                "run"
+              ]
+            }
           }
         }
       ]
@@ -214,14 +437,64 @@
           "name": "List Devices",
           "request": {
             "method": "GET",
-            "url": { "raw": "{{base_url}}/api/v1/devices", "host": ["{{base_url}}"], "path": ["api", "v1", "devices"] }
+            "url": {
+              "raw": "{{base_url}}/api/v1/devices",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "devices"
+              ]
+            }
           }
         },
         {
           "name": "Get Device by ID",
           "request": {
             "method": "GET",
-            "url": { "raw": "{{base_url}}/api/v1/devices/1", "host": ["{{base_url}}"], "path": ["api", "v1", "devices", "1"] }
+            "url": {
+              "raw": "{{base_url}}/api/v1/devices/1",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "devices",
+                "1"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Provision Device",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"credential_profile_id\": 1,\n    \"polling_interval_seconds\": 60\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/devices/1/provision",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "devices",
+                "1",
+                "provision"
+              ]
+            }
           }
         }
       ]
@@ -233,12 +506,28 @@
           "name": "Query Metrics",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n    \"path\": \"cpu.total\",\n    \"limit\": 10\n}"
             },
-            "url": { "raw": "{{base_url}}/api/v1/metrics/1", "host": ["{{base_url}}"], "path": ["api", "v1", "metrics", "1"] }
+            "url": {
+              "raw": "{{base_url}}/api/v1/metrics/1",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "metrics",
+                "1"
+              ]
+            }
           }
         }
       ]

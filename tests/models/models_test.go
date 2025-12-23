@@ -86,13 +86,13 @@ func TestCredentialProfile_TableName(t *testing.T) {
 
 func TestCredentialProfileStruct(t *testing.T) {
 	tests := []struct {
-		name          string
-		id            int64
-		nameField     string
-		description   string
-		protocol      string
-		payload       string
-		expectError   bool
+		name        string
+		id          int64
+		nameField   string
+		description string
+		protocol    string
+		payload     json.RawMessage
+		expectError bool
 	}{
 		{
 			name:        "Valid credential profile",
@@ -100,7 +100,7 @@ func TestCredentialProfileStruct(t *testing.T) {
 			nameField:   "Test Profile",
 			description: "Test Description",
 			protocol:    "ssh",
-			payload:     "encrypted_payload",
+			payload:     json.RawMessage(`{"key": "value"}`),
 			expectError: false,
 		},
 		{
@@ -109,7 +109,7 @@ func TestCredentialProfileStruct(t *testing.T) {
 			nameField:   "Another Profile",
 			description: "",
 			protocol:    "winrm",
-			payload:     "another_encrypted_payload",
+			payload:     json.RawMessage(`{"other": "data"}`),
 			expectError: false,
 		},
 	}
@@ -138,8 +138,8 @@ func TestCredentialProfileStruct(t *testing.T) {
 			if profile.Protocol != tt.protocol {
 				t.Errorf("Expected Protocol %s, got %s", tt.protocol, profile.Protocol)
 			}
-			if profile.Payload != tt.payload {
-				t.Errorf("Expected Payload %s, got %s", tt.payload, profile.Payload)
+			if string(profile.Payload) != string(tt.payload) {
+				t.Errorf("Expected Payload %s, got %s", string(tt.payload), string(profile.Payload))
 			}
 		})
 	}
@@ -222,13 +222,13 @@ func TestDiscoveryProfileStruct(t *testing.T) {
 
 func TestDeviceStruct(t *testing.T) {
 	tests := []struct {
-		name                 string
-		id                   int64
-		discoveryProfileID   int64
-		ipAddress            string
-		port                 int
-		status               string
-		expectError          bool
+		name               string
+		id                 int64
+		discoveryProfileID int64
+		ipAddress          string
+		port               int
+		status             string
+		expectError        bool
 	}{
 		{
 			name:               "Valid device with active status",
@@ -283,16 +283,16 @@ func TestDeviceStruct(t *testing.T) {
 
 func TestMonitorStruct(t *testing.T) {
 	tests := []struct {
-		name                      string
-		id                        int64
-		ipAddress                 string
-		pluginID                  string
-		port                      int
-		credentialProfileID       int64
-		discoveryProfileID        int64
-		pollingIntervalSeconds    int
-		status                    string
-		expectError               bool
+		name                   string
+		id                     int64
+		ipAddress              string
+		pluginID               string
+		port                   int
+		credentialProfileID    int64
+		discoveryProfileID     int64
+		pollingIntervalSeconds int
+		status                 string
+		expectError            bool
 	}{
 		{
 			name:                   "Valid monitor with active status",

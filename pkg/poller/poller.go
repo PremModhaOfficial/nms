@@ -3,10 +3,10 @@ package poller
 import (
 	"context"
 	"log/slog"
+	"nms/pkg/api"
 	"os"
 	"path/filepath"
 
-	"nms/pkg/database"
 	"nms/pkg/models"
 	"nms/pkg/plugin"
 	"nms/pkg/worker"
@@ -125,10 +125,10 @@ func (poller *Poller) createTasks(monitors []*models.Monitor) []plugin.Task {
 	tasks := make([]plugin.Task, 0, len(monitors))
 	for _, m := range monitors {
 		// Decrypt credentials payload
-		payload, err := database.DecryptPayload(m.CredentialProfile, poller.encryptionKey)
+		payload, err := api.DecryptPayload(m.CredentialProfile, poller.encryptionKey)
 		if err != nil {
 			slog.Error("Failed to decrypt credentials", "component", "Poller", "monitor_id", m.ID, "error", err)
-			payload = "" // Plugin will handle missing credentials
+			payload = nil // Plugin will handle missing credentials
 		}
 
 		task := plugin.Task{

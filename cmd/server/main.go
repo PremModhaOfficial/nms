@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"nms/pkg/api"
+	"nms/pkg/config"
 	"nms/pkg/database"
 	"nms/pkg/discovery"
 	"nms/pkg/models"
@@ -27,27 +28,20 @@ func main() {
 	// ══════════════════════════════════════════════════════════════
 	// CONFIGURATION
 	// ══════════════════════════════════════════════════════════════
-	config, err := models.LoadConfig(".")
+	cfg, err := config.LoadConfig(".")
 	if err != nil {
-		slog.Warn("Failed to load config, using defaults", "error", err)
-		config.PluginsDir = "plugins"
-		config.FpingPath = "/usr/bin/fping"
-		config.SchedulerTickIntervalSeconds = 5
-		config.FpingTimeoutMs = 500
-		config.FpingRetryCount = 2
-		config.PollingWorkerConcurrency = 5
-		config.DiscoveryWorkerConcurrency = 3
-		config.JWTSecret = "default-insecure-secret-change-me"
+		slog.Error("Failed to load config", "error", err)
+		os.Exit(1)
 	}
-	slog.Info("Config loaded", "fping_path", config.FpingPath, "tick_interval", config.SchedulerTickIntervalSeconds)
+	slog.Info("Config loaded", "fping_path", cfg.FpingPath, "tick_interval", cfg.SchedulerTickIntervalSeconds)
 
-	// Set JWT secret for the api package
-	api.SetJWTSecret(config.JWTSecret)
+	// Initialize Auth Service
+	authSvc := api.NewAuthService(cfg)
 
 	// ══════════════════════════════════════════════════════════════
 	// DATABASE
 	// ══════════════════════════════════════════════════════════════
-	db, err := database.Connect()
+	db, err := database.Connect(cfg)
 	if err != nil {
 		slog.Error("Failed to connect to database", "error", err)
 		os.Exit(1)
@@ -70,7 +64,7 @@ func main() {
 	pollResultChan := make(chan []plugin.Result, 100)
 	discResultChan := make(chan plugin.Result, 100)
 	schedulerToPollerChan := make(chan []*models.Monitor, 10)
-	provisioningChan := make(chan models.Event, 100)
+	provisioningCommandChan := make(chan models.Event, 100)
 
 	// New request-reply channels for CRUD and metrics
 	crudRequestChan := make(chan models.Request, 100)
@@ -103,15 +97,16 @@ func main() {
 		monitorChan,
 		credentialChan,
 		schedulerToPollerChan,
-		config.FpingPath,
-		config.SchedulerTickIntervalSeconds,
-		config.FpingTimeoutMs,
-		config.FpingRetryCount,
+		cfg.FpingPath,
+		cfg.SchedulerTickIntervalSeconds,
+		cfg.FpingTimeoutMs,
+		cfg.FpingRetryCount,
 	)
 
 	poll := poller.NewPoller(
-		config.PluginsDir,
-		config.PollingWorkerConcurrency,
+		cfg.PluginsDir,
+		cfg.EncryptionKey,
+		cfg.PollingWorkerConcurrency,
 		schedulerToPollerChan,
 		pollResultChan,
 	)
@@ -119,12 +114,13 @@ func main() {
 	discService := discovery.NewDiscoveryService(
 		discProfileChan,
 		discResultChan,
-		config.PluginsDir,
-		config.DiscoveryWorkerConcurrency,
+		cfg.PluginsDir,
+		cfg.EncryptionKey,
+		cfg.DiscoveryWorkerConcurrency,
 	)
 
 	// MetricsService handles high-volume poll results and metric queries
-	metricsWriter := persistence.NewMetricsService(
+	metricsService := persistence.NewMetricsService(
 		pollResultChan,
 		metricRequestChan,
 		metricRepo,
@@ -132,9 +128,9 @@ func main() {
 	)
 
 	// EntityService handles CRUD, discovery provisioning, and commands
-	entityWriter := persistence.NewEntityService(
+	entityService := persistence.NewEntityService(
 		discResultChan,
-		provisioningChan,
+		provisioningCommandChan,
 		crudRequestChan,
 		db,
 		credRepo,
@@ -167,8 +163,8 @@ func main() {
 	go sched.Run(ctx)
 	go poll.Run(ctx)
 	go discService.Start(ctx)
-	go metricsWriter.Run(ctx)
-	go entityWriter.Run(ctx)
+	go metricsService.Run(ctx)
+	go entityService.Run(ctx)
 
 	// ══════════════════════════════════════════════════════════════
 	// ROUTER SETUP
@@ -176,29 +172,29 @@ func main() {
 	r := gin.Default()
 
 	// Public routes (no auth)
-	r.POST("/login", api.LoginHandler)
+	r.POST("/login", authSvc.LoginHandler)
 
 	// Protected routes - all use channels, no repo dependencies
 	apiGroup := r.Group("/api/v1")
-	apiGroup.Use(api.JWTMiddleware())
+	apiGroup.Use(authSvc.JWTMiddleware())
 	{
-		api.RegisterEntityRoutes[models.CredentialProfile](apiGroup, "/credentials", "CredentialProfile", crudRequestChan)
-		api.RegisterEntityRoutes[models.Monitor](apiGroup, "/monitors", "Monitor", crudRequestChan)
-		api.RegisterEntityRoutes[models.DiscoveryProfile](apiGroup, "/discovery_profiles", "DiscoveryProfile", crudRequestChan)
-		api.RegisterEntityRoutes[models.Device](apiGroup, "/devices", "Device", crudRequestChan)
+		api.RegisterEntityRoutes[models.CredentialProfile](apiGroup, "/credentials", "CredentialProfile", cfg.EncryptionKey, crudRequestChan)
+		api.RegisterEntityRoutes[models.Monitor](apiGroup, "/monitors", "Monitor", cfg.EncryptionKey, crudRequestChan)
+		api.RegisterEntityRoutes[models.DiscoveryProfile](apiGroup, "/discovery_profiles", "DiscoveryProfile", cfg.EncryptionKey, crudRequestChan)
+		api.RegisterEntityRoutes[models.Device](apiGroup, "/devices", "Device", cfg.EncryptionKey, crudRequestChan)
 		api.RegisterMetricsRoute(apiGroup, metricRequestChan)
 
 		// Manual provisioning endpoints (zero repository dependencies)
-		apiGroup.POST("/discovery_profiles/:id/run", api.RunDiscoveryHandler(provisioningChan))
-		apiGroup.POST("/devices/:id/provision", api.ProvisionDeviceHandler(provisioningChan))
+		apiGroup.POST("/discovery_profiles/:id/run", api.RunDiscoveryHandler(provisioningCommandChan))
+		apiGroup.POST("/devices/:id/provision", api.ProvisionDeviceHandler(provisioningCommandChan))
 	}
 
 	// ══════════════════════════════════════════════════════════════
 	// START SERVER
 	// ══════════════════════════════════════════════════════════════
-	if config.TLSCertFile != "" && config.TLSKeyFile != "" {
+	if cfg.TLSCertFile != "" && cfg.TLSKeyFile != "" {
 		slog.Info("Starting HTTPS server", "port", 8443)
-		if err := r.RunTLS(":8443", config.TLSCertFile, config.TLSKeyFile); err != nil {
+		if err := r.RunTLS(":8443", cfg.TLSCertFile, cfg.TLSKeyFile); err != nil {
 			slog.Error("Server failed to start", "error", err)
 			os.Exit(1)
 		}

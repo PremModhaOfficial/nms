@@ -158,7 +158,8 @@ func (sched *Scheduler) schedule() {
 	for _, mwd := range sched.monitors {
 		if mwd.Deadline.Before(now) || mwd.Deadline.Equal(now) {
 			candidates = append(candidates, mwd)
-			if !ipSet[mwd.Monitor.IPAddress] {
+			// Only add IP to fping list if monitor requires ping check
+			if mwd.Monitor.ShouldPing && !ipSet[mwd.Monitor.IPAddress] {
 				ips = append(ips, mwd.Monitor.IPAddress)
 				ipSet[mwd.Monitor.IPAddress] = true
 			}
@@ -172,14 +173,17 @@ func (sched *Scheduler) schedule() {
 		return
 	}
 
-	// 2. Batch fping check on candidate IPs
+	// 2. Batch fping check on candidate IPs (only those that need it)
 	reachableIPs := sched.performBatchFping(ips)
 	slog.Debug("Fping results", "component", "Scheduler", "reachable_count", len(reachableIPs), "total_ips", len(ips))
 
 	// 3. Filter qualified monitors and update deadlines
 	qualified := make([]*models.Monitor, 0)
 	for _, mwd := range candidates {
-		if reachableIPs[mwd.Monitor.IPAddress] {
+		// Qualify if: (1) monitor doesn't need ping, OR (2) IP is reachable
+		isQualified := !mwd.Monitor.ShouldPing || reachableIPs[mwd.Monitor.IPAddress]
+
+		if isQualified {
 			// Attach credential info before sending
 			mwd.Monitor.CredentialProfile = sched.creds[mwd.Monitor.CredentialProfileID]
 			qualified = append(qualified, mwd.Monitor)
@@ -187,7 +191,7 @@ func (sched *Scheduler) schedule() {
 			// Update deadline: new_deadline = current_deadline + interval
 			newDeadline := mwd.Deadline.Add(time.Duration(mwd.Monitor.PollingIntervalSeconds) * time.Second)
 			mwd.Deadline = newDeadline
-			slog.Info("Monitor qualified", "component", "Scheduler", "monitor_id", mwd.Monitor.ID, "next_deadline", newDeadline.Format(time.RFC3339))
+			slog.Info("Monitor qualified", "component", "Scheduler", "monitor_id", mwd.Monitor.ID, "should_ping", mwd.Monitor.ShouldPing, "next_deadline", newDeadline.Format(time.RFC3339))
 		} else {
 			slog.Debug("Monitor not reachable", "component", "Scheduler", "monitor_id", mwd.Monitor.ID, "ip", mwd.Monitor.IPAddress)
 		}

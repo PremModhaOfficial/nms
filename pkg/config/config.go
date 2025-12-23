@@ -45,17 +45,7 @@ type Config struct {
 func LoadConfig(path string) (*Config, error) {
 	v := viper.New()
 
-	v.AddConfigPath(path)
-	v.SetConfigName("app")
-	v.SetConfigType("yaml")
-
-	// Allow Viper to read Environment Variables
-	v.AutomaticEnv()
-
-	// Map dots to underscores in environment variables
-	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
-
-	// Set Defaults
+	// 1. Set Defaults
 	v.SetDefault("DB_HOST", "localhost")
 	v.SetDefault("DB_USER", "nmslite")
 	v.SetDefault("DB_PASSWORD", "nmslite")
@@ -71,14 +61,30 @@ func LoadConfig(path string) (*Config, error) {
 	v.SetDefault("JWT_SECRET", "default-insecure-secret-change-me")
 	v.SetDefault("NMS_SECRET", "1234567890123456789012345678901212345678901234567890123456789012")
 	v.SetDefault("NMS_ADMIN_USER", "admin")
-	v.SetDefault("NMS_ADMIN_HASH", "$2a$10$BST/uOdLLXUyqO4fN.b9cuwVwoXEJWWFzpc4iirHiu3GcgbuJqtdu") // bcrypt hash of "admin"
+	v.SetDefault("NMS_ADMIN_HASH", "$2a$10$BST/uOdLLXUyqO4fN.b9cuwVwoXEJWWFzpc4iirHiu3GcgbuJqtdu")
 
+	// 2. Read app.yaml if exists
+	v.AddConfigPath(path)
+	v.SetConfigName("app")
+	v.SetConfigType("yaml")
 	if err := v.ReadInConfig(); err != nil {
-		// It's okay if config file is not found, we use defaults and env vars
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
 			return nil, err
 		}
 	}
+
+	// 3. Read .env if exists (overriding app.yaml)
+	v.SetConfigName(".env")
+	v.SetConfigType("env")
+	if err := v.MergeInConfig(); err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+			// Ignore if .env is missing or "app.env" is missing
+		}
+	}
+
+	// 4. Allow Viper to read Environment Variables (highest priority)
+	v.AutomaticEnv()
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 
 	var config Config
 	if err := v.Unmarshal(&config); err != nil {
