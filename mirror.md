@@ -9,7 +9,7 @@ Declarative map of the NMS codebase functions and their technical roles.
 ## main
 - Initializes all communication channels with specified buffer sizes.
 - Connects to PostgreSQL using GORM.
-- Instantiates all core services: `EntityWriter`, `MetricsWriter`, `Scheduler`, `Poller`, and `DiscoveryService`.
+- Instantiates all core services: `EntityService`, `MetricsService`, `Scheduler`, `Poller`, and `DiscoveryService`.
 - Starts services as background goroutines.
 - Configures and starts Gin HTTP server with API routes and JWT middleware.
 
@@ -26,16 +26,22 @@ Declarative map of the NMS codebase functions and their technical roles.
 - Injects claims into Gin context.
 
 ## RunDiscoveryHandler (provisioning.go)
-- Publishes `EventTriggerDiscovery` to `provisioningCommandChan`.
+- Publishes `EventTriggerDiscovery` to `provisioningEventChan`.
 - Triggers discovery for a specific profile ID.
 
 ## ProvisionDeviceHandler (provisioning.go)
-- Publishes `EventProvisionDevice` to `provisioningCommandChan`.
+- Publishes `EventProvisionDevice` to `provisioningEventChan`.
 - Queues manual device provisioning with custom polling intervals.
 
 ## respondError (response.go)
 - Standards API error responses in unified JSON format.
 - Aborts Gin context execution.
+
+## EncryptStruct / DecryptStruct (encryption.go)
+- Uses AES-256 to encrypt/decrypt fields tagged with `gocrypt:"aes"`.
+
+## DecryptPayload (encryption.go)
+- Specialized decryptor for `CredentialProfile` JSON payloads.
 
 ## RegisterEntityRoutes (routes.go)
 - Dynamically registers standard CRUD routes for generic entity types.
@@ -46,8 +52,8 @@ Declarative map of the NMS codebase functions and their technical roles.
 - Encrypts sensitive fields during create/update via `database.EncryptStruct`.
 - Blocks on reply channel for synchronous API responses.
 
-## metricsHandler (routes.go)
-- Parses `BatchMetricQuery` and forwards to `MetricsWriter` via `metricRequestChan`.
+## RegisterMetricsRoute (routes.go)
+- Registers `/metrics` endpoint and forwards `MetricQueryRequest` to `MetricsService` via `metricRequestChan`.
 
 ---
 
@@ -57,50 +63,37 @@ Declarative map of the NMS codebase functions and their technical roles.
 - Establishes GORM PostgreSQL connection using environment configuration.
 - Configures connection pooling and logging.
 
-## EncryptStruct / DecryptStruct (encryption.go)
-- Uses AES-256 to encrypt/decrypt fields tagged with `gocrypt:"aes"`.
-
-## DecryptPayload (encryption.go)
-- Specialized decryptor for `CredentialProfile` JSON payloads.
-
-## NewMetricRepository (metricsRepository.go)
-- Initializes repository for high-performance raw SQL metric queries.
-
-## GetMetricsBatch (metricsRepository.go)
-- Executes parameterized raw SQL with prepared statements.
-- Performs dot-notation to JSONB path conversion (e.g., `cpu.total` -> `{cpu,total}`).
-- Validates paths against regex to prevent SQL injection.
-
 ## GormRepository (repository.go)
 - Implements generic CRUD operations using GORM.
 - Provides standard `List`, `Get`, `Create`, `Update`, `Delete` logic for any model.
-
-## PreloadingDiscoveryProfileRepo (preloadingRepository.go)
-- Decorates `DiscoveryProfile` repository with automatic `CredentialProfile` preloading.
+- Includes `GetByField` for targeted entity lookups.
 
 ---
 
-# datawriter - pkg/datawriter/
+# persistence - pkg/persistence/
 
-## NewEntityWriter (entityWriter.go)
-- Orchestrates complex entity persistence and event publishing.
+## NewEntityService (entityService.go)
+- Orchestrates complex entity persistence, discovery provisioning, and event publishing.
 
-## Run (entityWriter.go)
-- Main loop consuming `discoveryResults`, `commands`, and `requests`.
+## Run (entityService.go)
+- Main loop consuming `discoveryResults`, `events`, and `requests`.
 
-## provisionFromDiscovery (entityWriter.go)
+## provisionFromDiscovery (entityService.go)
 - Atomically creates `Device` and `Monitor` from discovery plugin output.
-- Publishes `monitorChan` events for scheduler synchronization.
+- Publishes events for scheduler synchronization.
 
-## handleCRUD (entityWriter.go)
-- Generic internal handler for processing `models.Request` items.
+## handleCrudRequest (entityService.go)
+- Central router for CRUD operations across multiple entity types.
 - Publishes change events to specific topics after successful DB commits.
 
-## NewMetricsWriter (metricsWriter.go)
-- Hot-path service for persisting high-volume polling data.
+## NewMetricsService (metricsService.go)
+- Hot-path service for persisting high-volume polling data and handling metric queries.
 
-## savePollResults (metricsWriter.go)
-- Batches `plugin.Result` items into `models.Metric` records for DB insertion.
+## savePollResults (metricsService.go)
+- Batches `plugin.Result` items for DB insertion.
+
+## handleQuery (metricsService.go)
+- Executes high-performance raw SQL with prepared statements for metric retrieval.
 
 ---
 
@@ -127,7 +120,7 @@ Declarative map of the NMS codebase functions and their technical roles.
 - Decrypts credentials and submits tasks to `PollPool`.
 
 ## collectResults (poller.go)
-- Proxies poll results from worker pool to `MetricsWriter` via `pollResultChan`.
+- Proxies poll results from worker pool to `MetricsService` via `pollResultChan`.
 
 ---
 
@@ -161,10 +154,14 @@ Declarative map of the NMS codebase functions and their technical roles.
 
 ---
 
-# models - pkg/models/
+# config - pkg/config/
 
 ## LoadConfig (config.go)
 - Reads `app.yaml` and environment variables via `viper`.
+
+---
+
+# models - pkg/models/
 
 ## TableName (models.go)
 - Explicit GORM table name overrides for all domain entities.

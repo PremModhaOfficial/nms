@@ -11,6 +11,7 @@ import (
 type Repository[T any] interface {
 	List(ctx context.Context) ([]*T, error)
 	Get(ctx context.Context, id int64) (*T, error)
+	GetByField(ctx context.Context, field string, value any) (*T, error)
 	Create(ctx context.Context, entity *T) (*T, error)
 	Update(ctx context.Context, id int64, entity *T) (*T, error)
 	Delete(ctx context.Context, id int64) error
@@ -39,6 +40,15 @@ func (repository *GormRepository[T]) List(ctx context.Context) ([]*T, error) {
 func (repository *GormRepository[T]) Get(ctx context.Context, id int64) (*T, error) {
 	var entity T
 	result := repository.db.WithContext(ctx).First(&entity, id)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return &entity, nil
+}
+
+func (repository *GormRepository[T]) GetByField(ctx context.Context, field string, value any) (*T, error) {
+	var entity T
+	result := repository.db.WithContext(ctx).Where(fmt.Sprintf("%s = ?", field), value).First(&entity)
 	if result.Error != nil {
 		return nil, result.Error
 	}

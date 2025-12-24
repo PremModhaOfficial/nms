@@ -144,7 +144,7 @@ func DecryptPayload(cred *models.CredentialProfile, secretKey string) (json.RawM
 	decrypted, err := DecryptStruct(*cred, secretKey)
 	if err != nil {
 		// Fallback: If it's already raw JSON (starts with {), use it as is
-		// This handles unencrypted data in the DB during development/migration
+		// This handles unencrypted data in the db during development/migration
 		if len(cred.Payload) > 0 && cred.Payload[0] == '{' {
 			return cred.Payload, nil
 		}

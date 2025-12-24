@@ -5,8 +5,9 @@ import (
 	"log/slog"
 	"os"
 
-	"nms/pkg/api"
 	"nms/pkg/config"
+
+	"nms/pkg/api"
 	"nms/pkg/database"
 	"nms/pkg/discovery"
 	"nms/pkg/models"
@@ -28,20 +29,20 @@ func main() {
 	// ══════════════════════════════════════════════════════════════
 	// CONFIGURATION
 	// ══════════════════════════════════════════════════════════════
-	cfg, err := config.LoadConfig(".")
+	conf, err := config.LoadConfig(".")
 	if err != nil {
-		slog.Error("Failed to load config", "error", err)
+		slog.Error("Failed to load conf", "error", err)
 		os.Exit(1)
 	}
-	slog.Info("Config loaded", "fping_path", cfg.FpingPath, "tick_interval", cfg.SchedulerTickIntervalSeconds)
+	slog.Info("Config loaded", "fping_path", conf.FpingPath, "tick_interval", conf.SchedulerTickIntervalSeconds)
 
 	// Initialize Auth Service
-	authSvc := api.NewAuthService(cfg)
+	auth := api.Auth(conf)
 
 	// ══════════════════════════════════════════════════════════════
 	// DATABASE
 	// ══════════════════════════════════════════════════════════════
-	db, err := database.Connect(cfg)
+	db, err := database.Connect(conf)
 	if err != nil {
 		slog.Error("Failed to connect to database", "error", err)
 		os.Exit(1)
@@ -58,37 +59,19 @@ func main() {
 	// 4. Simple semantics (send/receive) that are idiomatic to Go.
 	// Trade-off: Messages are not persisted; a crash loses in-flight events.
 	// For production-critical scenarios, consider an external queue.
-	monitorChan := make(chan models.Event, 100)
-	credentialChan := make(chan models.Event, 100)
-	discProfileChan := make(chan models.Event, 100)
-	pollResultChan := make(chan []plugin.Result, 100)
-	discResultChan := make(chan plugin.Result, 100)
-	schedulerToPollerChan := make(chan []*models.Monitor, 10)
-	provisioningCommandChan := make(chan models.Event, 100)
+	monitorChan := make(chan models.Event, conf.InternalQueueSize)
+	credentialChan := make(chan models.Event, conf.InternalQueueSize)
+	discProfileChan := make(chan models.Event, conf.InternalQueueSize)
+	pollResultChan := make(chan []plugin.Result, conf.InternalQueueSize)
+	discResultChan := make(chan plugin.Result, conf.InternalQueueSize)
+	schedulerToPollerChan := make(chan []*models.Monitor, conf.PollerBatchSize)
+	provisioningEventChan := make(chan models.Event, conf.InternalQueueSize)
 
 	// New request-reply channels for CRUD and metrics
-	crudRequestChan := make(chan models.Request, 100)
-	metricRequestChan := make(chan models.Request, 100)
+	crudRequestChan := make(chan models.Request, conf.InternalQueueSize)
+	metricRequestChan := make(chan models.Request, conf.InternalQueueSize)
 
-	// ══════════════════════════════════════════════════════════════
-	// REPOSITORIES - All owned by DataWriter (service layer)
-	// ══════════════════════════════════════════════════════════════
-	credRepo := database.NewGormRepository[models.CredentialProfile](db)
-	monRepo := database.NewGormRepository[models.Monitor](db)
-	discProfileRepo := database.NewGormRepository[models.DiscoveryProfile](db)
-	deviceRepo := database.NewGormRepository[models.Device](db)
-
-	// Get raw sql.DB for MetricRepository (uses prepared statements directly)
-	sqlDB, err := db.DB()
-	if err != nil {
-		slog.Error("Failed to get sql.DB from GORM", "error", err)
-		os.Exit(1)
-	}
-	metricRepo, err := database.NewMetricRepository(sqlDB)
-	if err != nil {
-		slog.Error("Failed to create MetricRepository", "error", err)
-		os.Exit(1)
-	}
+	// Services will create their own repositories from db
 
 	// ══════════════════════════════════════════════════════════════
 	// SERVICES
@@ -97,16 +80,18 @@ func main() {
 		monitorChan,
 		credentialChan,
 		schedulerToPollerChan,
-		cfg.FpingPath,
-		cfg.SchedulerTickIntervalSeconds,
-		cfg.FpingTimeoutMs,
-		cfg.FpingRetryCount,
+		// configs
+		conf.FpingPath,
+		conf.SchedulerTickIntervalSeconds,
+		conf.FpingTimeoutMs,
+		conf.FpingRetryCount,
 	)
 
 	poll := poller.NewPoller(
-		cfg.PluginsDir,
-		cfg.EncryptionKey,
-		cfg.PollingWorkerConcurrency,
+		conf.PluginsDir,
+		conf.EncryptionKey,
+		conf.PollingWorkerConcurrency,
+		conf.InternalQueueSize,
 		schedulerToPollerChan,
 		pollResultChan,
 	)
@@ -114,29 +99,27 @@ func main() {
 	discService := discovery.NewDiscoveryService(
 		discProfileChan,
 		discResultChan,
-		cfg.PluginsDir,
-		cfg.EncryptionKey,
-		cfg.DiscoveryWorkerConcurrency,
+		conf.PluginsDir,
+		conf.EncryptionKey,
+		conf.DiscoveryWorkerConcurrency,
+		conf.InternalQueueSize,
 	)
 
 	// MetricsService handles high-volume poll results and metric queries
 	metricsService := persistence.NewMetricsService(
 		pollResultChan,
 		metricRequestChan,
-		metricRepo,
 		db,
+		conf.MetricsDefaultLimit,
+		conf.MetricsDefaultLookbackHours,
 	)
 
 	// EntityService handles CRUD, discovery provisioning, and commands
 	entityService := persistence.NewEntityService(
 		discResultChan,
-		provisioningCommandChan,
+		provisioningEventChan,
 		crudRequestChan,
 		db,
-		credRepo,
-		monRepo,
-		deviceRepo,
-		discProfileRepo,
 		discProfileChan,
 		monitorChan,
 		credentialChan,
@@ -145,13 +128,13 @@ func main() {
 	// ══════════════════════════════════════════════════════════════
 	// INITIAL CACHE LOAD
 	// ══════════════════════════════════════════════════════════════
-	ctx := context.Background()
-	initialMonitors, err := monRepo.List(ctx)
-	if err != nil {
+	contxt := context.Background()
+	var initialMonitors []*models.Monitor
+	if err := db.Find(&initialMonitors).Error; err != nil {
 		slog.Error("Failed to list monitors for scheduler", "error", err)
 	}
-	initialCreds, err := credRepo.List(ctx)
-	if err != nil {
+	var initialCreds []*models.CredentialProfile
+	if err := db.Find(&initialCreds).Error; err != nil {
 		slog.Error("Failed to list credentials for scheduler", "error", err)
 	}
 	sched.LoadCache(initialMonitors, initialCreds)
@@ -160,47 +143,47 @@ func main() {
 	// ══════════════════════════════════════════════════════════════
 	// START SERVICES
 	// ══════════════════════════════════════════════════════════════
-	go sched.Run(ctx)
-	go poll.Run(ctx)
-	go discService.Start(ctx)
-	go metricsService.Run(ctx)
-	go entityService.Run(ctx)
+	go sched.Run(contxt)
+	go poll.Run(contxt)
+	go discService.Start(contxt)
+	go metricsService.Run(contxt)
+	go entityService.Run(contxt)
 
 	// ══════════════════════════════════════════════════════════════
 	// ROUTER SETUP
 	// ══════════════════════════════════════════════════════════════
-	r := gin.Default()
+	router := gin.Default()
 
 	// Public routes (no auth)
-	r.POST("/login", authSvc.LoginHandler)
+	router.POST("/login", auth.LoginHandler)
 
 	// Protected routes - all use channels, no repo dependencies
-	apiGroup := r.Group("/api/v1")
-	apiGroup.Use(authSvc.JWTMiddleware())
+	apiGroup := router.Group("/api/v1")
+	apiGroup.Use(auth.JWTMiddleware())
 	{
-		api.RegisterEntityRoutes[models.CredentialProfile](apiGroup, "/credentials", "CredentialProfile", cfg.EncryptionKey, crudRequestChan)
-		api.RegisterEntityRoutes[models.Monitor](apiGroup, "/monitors", "Monitor", cfg.EncryptionKey, crudRequestChan)
-		api.RegisterEntityRoutes[models.DiscoveryProfile](apiGroup, "/discovery_profiles", "DiscoveryProfile", cfg.EncryptionKey, crudRequestChan)
-		api.RegisterEntityRoutes[models.Device](apiGroup, "/devices", "Device", cfg.EncryptionKey, crudRequestChan)
+		api.RegisterEntityRoutes[models.CredentialProfile](apiGroup, "/credentials", "CredentialProfile", conf.EncryptionKey, crudRequestChan)
+		api.RegisterEntityRoutes[models.Monitor](apiGroup, "/monitors", "Monitor", conf.EncryptionKey, crudRequestChan)
+		api.RegisterEntityRoutes[models.DiscoveryProfile](apiGroup, "/discovery_profiles", "DiscoveryProfile", conf.EncryptionKey, crudRequestChan)
+		api.RegisterEntityRoutes[models.Device](apiGroup, "/devices", "Device", conf.EncryptionKey, crudRequestChan)
 		api.RegisterMetricsRoute(apiGroup, metricRequestChan)
 
 		// Manual provisioning endpoints (zero repository dependencies)
-		apiGroup.POST("/discovery_profiles/:id/run", api.RunDiscoveryHandler(provisioningCommandChan))
-		apiGroup.POST("/devices/:id/provision", api.ProvisionDeviceHandler(provisioningCommandChan))
+		apiGroup.POST("/discovery_profiles/:id/run", api.RunDiscoveryHandler(provisioningEventChan))
+		apiGroup.POST("/devices/:id/provision", api.ProvisionDeviceHandler(provisioningEventChan))
 	}
 
 	// ══════════════════════════════════════════════════════════════
 	// START SERVER
 	// ══════════════════════════════════════════════════════════════
-	if cfg.TLSCertFile != "" && cfg.TLSKeyFile != "" {
-		slog.Info("Starting HTTPS server", "port", 8443)
-		if err := r.RunTLS(":8443", cfg.TLSCertFile, cfg.TLSKeyFile); err != nil {
+	if conf.TLSCertFile != "" && conf.TLSKeyFile != "" {
+		slog.Info("Starting HTTPS app", "port", 8443)
+		if err := router.RunTLS(":8443", conf.TLSCertFile, conf.TLSKeyFile); err != nil {
 			slog.Error("Server failed to start", "error", err)
 			os.Exit(1)
 		}
 	} else {
-		slog.Info("Starting HTTP server", "port", 8080)
-		if err := r.Run(":8080"); err != nil {
+		slog.Info("Starting HTTP app", "port", 8080)
+		if err := router.Run(":8080"); err != nil {
 			slog.Error("Server failed to start", "error", err)
 			os.Exit(1)
 		}

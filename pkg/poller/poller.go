@@ -27,8 +27,8 @@ type Poller struct {
 }
 
 // NewPoller creates a new Poller instance.
-func NewPoller(pluginDir string, encryptionKey string, workerCount int, inputChan <-chan []*models.Monitor, outputChan chan<- []plugin.Result) *Poller {
-	pool := worker.NewPool[plugin.Task, plugin.Result](workerCount, "PollPool")
+func NewPoller(pluginDir string, encryptionKey string, workerCount int, bufferSize int, inputChan <-chan []*models.Monitor, outputChan chan<- []plugin.Result) *Poller {
+	pool := worker.NewPool[plugin.Task, plugin.Result](workerCount, "PollPool", bufferSize)
 
 	p := &Poller{
 		pool:          pool,

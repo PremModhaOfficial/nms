@@ -39,6 +39,17 @@ type Config struct {
 	EncryptionKey string `mapstructure:"NMS_SECRET"`
 	AdminUser     string `mapstructure:"NMS_ADMIN_USER"`
 	AdminHash     string `mapstructure:"NMS_ADMIN_HASH"`
+
+	// Internal Queue Settings
+	InternalQueueSize int `mapstructure:"INTERNAL_QUEUE_SIZE"`
+	PollerBatchSize   int `mapstructure:"POLLER_BATCH_SIZE"`
+
+	// Authentication
+	SessionDurationHours int `mapstructure:"SESSION_DURATION_HOURS"`
+
+	// Metrics Query Defaults
+	MetricsDefaultLimit         int `mapstructure:"METRICS_DEFAULT_LIMIT"`
+	MetricsDefaultLookbackHours int `mapstructure:"METRICS_DEFAULT_LOOKBACK_HOURS"`
 }
 
 // LoadConfig reads configuration from file or environment variables.
@@ -62,6 +73,11 @@ func LoadConfig(path string) (*Config, error) {
 	v.SetDefault("NMS_SECRET", "1234567890123456789012345678901212345678901234567890123456789012")
 	v.SetDefault("NMS_ADMIN_USER", "admin")
 	v.SetDefault("NMS_ADMIN_HASH", "$2a$10$BST/uOdLLXUyqO4fN.b9cuwVwoXEJWWFzpc4iirHiu3GcgbuJqtdu")
+	v.SetDefault("INTERNAL_QUEUE_SIZE", 100)
+	v.SetDefault("POLLER_BATCH_SIZE", 10)
+	v.SetDefault("SESSION_DURATION_HOURS", 24)
+	v.SetDefault("METRICS_DEFAULT_LIMIT", 10)
+	v.SetDefault("METRICS_DEFAULT_LOOKBACK_HOURS", 1)
 
 	// 2. Read app.yaml if exists
 	v.AddConfigPath(path)

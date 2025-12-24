@@ -47,9 +47,9 @@ func TestScheduler_Integration(t *testing.T) {
 
 	// 3. Load initial data
 	monitors := []*models.Monitor{
-		{ID: 1, IPAddress: "192.168.1.1", PollingIntervalSeconds: 1, PluginID: "icmp", Port: 0}, // Reachable
-		{ID: 2, IPAddress: "192.168.1.5", PollingIntervalSeconds: 1, PluginID: "icmp", Port: 0}, // Unreachable
-		{ID: 3, IPAddress: "10.0.0.10", PollingIntervalSeconds: 2, PluginID: "snmp", Port: 161}, // Reachable
+		{ID: 1, IPAddress: "192.168.1.1", PollingIntervalSeconds: 1, PluginID: "icmp", Port: 0, ShouldPing: true}, // Reachable
+		{ID: 2, IPAddress: "192.168.1.5", PollingIntervalSeconds: 1, PluginID: "icmp", Port: 0, ShouldPing: true}, // Unreachable
+		{ID: 3, IPAddress: "10.0.0.10", PollingIntervalSeconds: 2, PluginID: "snmp", Port: 161, ShouldPing: true}, // Reachable
 	}
 	creds := []*models.CredentialProfile{
 		{ID: 1, Name: "Cred1"},

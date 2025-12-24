@@ -12,6 +12,7 @@ const (
 	// Command events for manual provisioning
 	EventTriggerDiscovery EventType = "trigger_discovery"
 	EventProvisionDevice  EventType = "provision_device"
+	EventRunDiscovery     EventType = "run_discovery" // Explicitly run discovery regardless of AutoRun flag
 )
 
 // Event represents a CRUD event for scheduler cache synchronization.
@@ -20,13 +21,13 @@ type Event struct {
 	Payload interface{} `json:"payload"`
 }
 
-// DiscoveryTriggerCommand represents a command to trigger discovery
-type DiscoveryTriggerCommand struct {
+// DiscoveryTriggerEvent represents a command to trigger discovery
+type DiscoveryTriggerEvent struct {
 	DiscoveryProfileID int64
 }
 
-// DeviceProvisionCommand represents a command to provision a device
-type DeviceProvisionCommand struct {
+// DeviceProvisionEvent represents a command to provision a device
+type DeviceProvisionEvent struct {
 	DeviceID               int64
 	CredentialProfileID    int64
 	PollingIntervalSeconds int

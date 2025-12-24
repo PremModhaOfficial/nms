@@ -44,8 +44,9 @@ func NewDiscoveryService(
 	pluginDir string,
 	encryptionKey string,
 	workerCount int,
+	bufferSize int,
 ) *DiscoveryService {
-	pool := worker.NewPool[plugin.Task, plugin.Result](workerCount, "DiscoveryPool", "-discovery")
+	pool := worker.NewPool[plugin.Task, plugin.Result](workerCount, "DiscoveryPool", bufferSize, "-discovery")
 	return &DiscoveryService{
 		events:        events,
 		pool:          pool,
@@ -88,7 +89,14 @@ func (discovery *DiscoveryService) processEvent(ctx context.Context, event model
 
 	switch event.Type {
 	case models.EventCreate, models.EventUpdate:
-		slog.Info("Running discovery for profile", "component", "DiscoveryService", "profile_name", profile.Name)
+		if profile.AutoRun {
+			slog.Info("Running discovery for profile (AutoRun enabled)", "component", "DiscoveryService", "profile_name", profile.Name)
+			discovery.runDiscovery(ctx, profile)
+		} else {
+			slog.Info("Skipping auto-discovery for profile (AutoRun disabled)", "component", "DiscoveryService", "profile_name", profile.Name)
+		}
+	case models.EventRunDiscovery:
+		slog.Info("Running discovery for profile (explicit trigger)", "component", "DiscoveryService", "profile_name", profile.Name)
 		discovery.runDiscovery(ctx, profile)
 	case models.EventDelete:
 		slog.Info("Profile deleted", "component", "DiscoveryService", "profile_name", profile.Name)

@@ -9,8 +9,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// RunDiscoveryHandler publishes a command event to trigger discovery (zero repo deps)
-func RunDiscoveryHandler(commandCh chan<- models.Event) gin.HandlerFunc {
+// RunDiscoveryHandler publishes a event to trigger discovery (zero repo deps)
+func RunDiscoveryHandler(eventChan chan<- models.Event) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 		if err != nil {
@@ -19,9 +19,9 @@ func RunDiscoveryHandler(commandCh chan<- models.Event) gin.HandlerFunc {
 		}
 
 		// Publish command event
-		commandCh <- models.Event{
+		eventChan <- models.Event{
 			Type: models.EventTriggerDiscovery,
-			Payload: &models.DiscoveryTriggerCommand{
+			Payload: &models.DiscoveryTriggerEvent{
 				DiscoveryProfileID: id,
 			},
 		}
@@ -64,7 +64,7 @@ func ProvisionDeviceHandler(provisionCh chan<- models.Event) gin.HandlerFunc {
 		// Publish command event
 		provisionCh <- models.Event{
 			Type: models.EventProvisionDevice,
-			Payload: &models.DeviceProvisionCommand{
+			Payload: &models.DeviceProvisionEvent{
 				DeviceID:               id,
 				CredentialProfileID:    req.CredentialProfileID,
 				PollingIntervalSeconds: req.PollingIntervalSeconds,

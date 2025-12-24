@@ -2,8 +2,8 @@
 # ══════════════════════════════════════════════════════════════════════════════
 # NMS Server Startup Script
 # ══════════════════════════════════════════════════════════════════════════════
-# This script compiles the server, sets up secure environment variables,
-# and starts the NMS server.
+# This script compiles the app, sets up secure environment variables,
+# and starts the NMS app.
 #
 # Usage:
 #   ./start.sh                       # Uses default dev credentials (admin/admin)
@@ -31,10 +31,10 @@ echo -e "${GREEN}═════════════════════
 mkdir -p bin
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Compile the server and plugins
+# Compile the app and plugins
 # ══════════════════════════════════════════════════════════════════════════════
 echo -e "${YELLOW}[1/3] Compiling server and plugins...${NC}"
-go build -o bin/nms-server cmd/server/main.go
+go build -o bin/nms-app cmd/app/main.go
 mkdir -p plugins
 go build -o plugins/winrm plugin-code/winrm/main.go
 echo -e "${GREEN}[✓] Compiled successfully${NC}"
@@ -69,10 +69,10 @@ echo -e "${GREEN}[✓] Environment configured${NC}"
 echo -e "${YELLOW}    Admin user: $NMS_ADMIN_USER${NC}"
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Start the server
+# Start the app
 # ══════════════════════════════════════════════════════════════════════════════
 echo -e "${YELLOW}[3/3] Starting server...${NC}"
 echo -e "${GREEN}═══════════════════════════════════════════════════════════════${NC}"
 echo ""
 
-exec bin/nms-server
+exec bin/nms-app

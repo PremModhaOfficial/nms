@@ -13,19 +13,21 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// AuthService handles user authentication and JWT operations.
-type AuthService struct {
+// JwtAuth handles user authentication and JWT operations.
+type JwtAuth struct {
 	jwtSecret     []byte
 	adminUsername string
 	adminPassHash []byte
+	expiryHours   int
 }
 
-// NewAuthService creates a new AuthService with the provided configuration.
-func NewAuthService(cfg *config.Config) *AuthService {
-	return &AuthService{
+// Auth creates a new JwtAuth with the provided configuration.
+func Auth(cfg *config.Config) *JwtAuth {
+	return &JwtAuth{
 		jwtSecret:     []byte(cfg.JWTSecret),
 		adminUsername: cfg.AdminUser,
 		adminPassHash: []byte(cfg.AdminHash),
+		expiryHours:   cfg.SessionDurationHours,
 	}
 }
 
@@ -36,7 +38,7 @@ type LoginRequest struct {
 }
 
 // LoginHandler handles user authentication and issues a JWT.
-func (s *AuthService) LoginHandler(context *gin.Context) {
+func (jwtAuth *JwtAuth) LoginHandler(context *gin.Context) {
 	var req LoginRequest
 	if err := context.ShouldBindJSON(&req); err != nil {
 		respondError(context, http.StatusBadRequest, err.Error())
@@ -44,13 +46,13 @@ func (s *AuthService) LoginHandler(context *gin.Context) {
 	}
 
 	// Validate credentials against configured values
-	if req.Username != s.adminUsername {
+	if req.Username != jwtAuth.adminUsername {
 		respondError(context, http.StatusUnauthorized, "invalid credentials")
 		return
 	}
 
 	// Compare password against bcrypt hash
-	if err := bcrypt.CompareHashAndPassword(s.adminPassHash, []byte(req.Password)); err != nil {
+	if err := bcrypt.CompareHashAndPassword(jwtAuth.adminPassHash, []byte(req.Password)); err != nil {
 		respondError(context, http.StatusUnauthorized, "invalid credentials")
 		return
 	}
@@ -59,11 +61,11 @@ func (s *AuthService) LoginHandler(context *gin.Context) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"username": req.Username,
 		"iss":      "nms-lite",
-		"exp":      time.Now().Add(24 * time.Hour).Unix(),
+		"exp":      time.Now().Add(time.Duration(jwtAuth.expiryHours) * time.Hour).Unix(),
 		"iat":      time.Now().Unix(),
 	})
 
-	tokenString, err := token.SignedString(s.jwtSecret)
+	tokenString, err := token.SignedString(jwtAuth.jwtSecret)
 	if err != nil {
 		respondError(context, http.StatusInternalServerError, "failed to sign token")
 		return
@@ -73,7 +75,7 @@ func (s *AuthService) LoginHandler(context *gin.Context) {
 }
 
 // JWTMiddleware validates the Authorization header.
-func (s *AuthService) JWTMiddleware() gin.HandlerFunc {
+func (jwtAuth *JwtAuth) JWTMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
@@ -92,7 +94,7 @@ func (s *AuthService) JWTMiddleware() gin.HandlerFunc {
 			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 			}
-			return s.jwtSecret, nil
+			return jwtAuth.jwtSecret, nil
 		})
 
 		if err != nil || !token.Valid {

@@ -3,7 +3,7 @@
 # Default target
 all: help
 
-## build: Build the server and plugins
+## build: Build the app and plugins
 build:
 	@echo "Building NMS Server..."
 	@mkdir -p bin
@@ -13,7 +13,7 @@ build:
 	go build -o plugins/winrm plugin-code/winrm/main.go
 	@echo "Build complete."
 
-## run: Run the server using start.sh (includes secure env setup)
+## run: Run the app using start.sh (includes secure env setup)
 run:
 	@./start.sh
 
@@ -26,7 +26,7 @@ dev: stop build
 	@echo "Starting in development mode..."
 	@./start.sh
 
-## stop: Stop any running nms-server instances
+## stop: Stop any running nms-app instances
 stop:
 	@echo "Stopping NMS Server..."
 	@pkill nms-server || true

@@ -3,7 +3,6 @@ package database
 import (
 	"fmt"
 	"log/slog"
-
 	"nms/pkg/config"
 
 	"gorm.io/driver/postgres"

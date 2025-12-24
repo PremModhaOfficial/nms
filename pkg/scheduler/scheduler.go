@@ -21,8 +21,8 @@ type MonitorWithDeadline struct {
 // Scheduler manages the scheduling of monitors based on deadlines.
 type Scheduler struct {
 	// Cache maps
-	monitors map[int64]*MonitorWithDeadline
-	creds    map[int64]*models.CredentialProfile
+	monitors    map[int64]*MonitorWithDeadline
+	credentials map[int64]*models.CredentialProfile
 
 	// Channels - received from outside for event-driven communication
 	monitorEvents <-chan models.Event      // Monitor CRUD events
@@ -47,7 +47,7 @@ func NewScheduler(
 ) *Scheduler {
 	return &Scheduler{
 		monitors:      make(map[int64]*MonitorWithDeadline),
-		creds:         make(map[int64]*models.CredentialProfile),
+		credentials:   make(map[int64]*models.CredentialProfile),
 		monitorEvents: monitorEvents,
 		credEvents:    credEvents,
 		OutputChan:    outputChan,
@@ -61,9 +61,9 @@ func NewScheduler(
 // LoadCache populates the internal maps and initializes deadlines.
 func (sched *Scheduler) LoadCache(monitors []*models.Monitor, creds []*models.CredentialProfile) {
 	slog.Info("Loading credentials to cache", "component", "Scheduler", "count", len(creds))
-	// Populate sched.creds map
+	// Populate sched.credentials map
 	for _, cred := range creds {
-		sched.creds[cred.ID] = cred
+		sched.credentials[cred.ID] = cred
 	}
 
 	slog.Info("Loading monitors to cache", "component", "Scheduler", "count", len(monitors))
@@ -76,7 +76,7 @@ func (sched *Scheduler) LoadCache(monitors []*models.Monitor, creds []*models.Cr
 		}
 		slog.Info("Monitor loaded to cache", "component", "Scheduler", "monitor_id", mon.ID, "ip", mon.IPAddress, "interval", mon.PollingIntervalSeconds, "deadline", now.Format(time.RFC3339))
 	}
-	slog.Info("Cache load complete", "component", "Scheduler", "monitor_count", len(sched.monitors), "credential_count", len(sched.creds))
+	slog.Info("Cache load complete", "component", "Scheduler", "monitor_count", len(sched.monitors), "credential_count", len(sched.credentials))
 }
 
 // Run starts the main loop.
@@ -138,10 +138,10 @@ func (sched *Scheduler) processCredentialEvent(event models.Event) {
 	switch event.Type {
 	case models.EventCreate, models.EventUpdate:
 		slog.Info("Processing credential event", "component", "Scheduler", "type", event.Type, "credential_id", payload.ID)
-		sched.creds[payload.ID] = payload
+		sched.credentials[payload.ID] = payload
 	case models.EventDelete:
 		slog.Info("Deleting credential from cache", "component", "Scheduler", "credential_id", payload.ID)
-		delete(sched.creds, payload.ID)
+		delete(sched.credentials, payload.ID)
 	}
 }
 
@@ -185,7 +185,7 @@ func (sched *Scheduler) schedule() {
 
 		if isQualified {
 			// Attach credential info before sending
-			mwd.Monitor.CredentialProfile = sched.creds[mwd.Monitor.CredentialProfileID]
+			mwd.Monitor.CredentialProfile = sched.credentials[mwd.Monitor.CredentialProfileID]
 			qualified = append(qualified, mwd.Monitor)
 
 			// Update deadline: new_deadline = current_deadline + interval

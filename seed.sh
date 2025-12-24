@@ -3,7 +3,7 @@
 # Base URL
 URL="http://localhost:8080/api/v1"
 
-# Function to check if server is up
+# Function to check if app is up
 wait_for_server() {
   echo "Waiting for server..."
   for i in {1..10}; do

@@ -32,11 +32,8 @@ graph TB
         SCH[Scheduler]
         POL[Poller]
         DISC[DiscoveryService]
-    end
-
-    subgraph "Data Layer"
-        EW[EntityWriter]
-        MW[MetricsWriter]
+        ES[EntityService]
+        MS[MetricsService]
     end
 
     subgraph "Storage"
@@ -51,8 +48,8 @@ graph TB
     API --> CH
     CH --> SCH
     CH --> DISC
-    CH --> EW
-    CH --> MW
+    CH --> ES
+    CH --> MS
 
     SCH --> POL
     POL --> CH
@@ -62,8 +59,8 @@ graph TB
     DISC --> PLUGINS
     SCH --> FPING
 
-    EW --> PG
-    MW --> PG
+    ES --> PG
+    MS --> PG
 ```
 
 ### Key Architectural Properties
@@ -95,9 +92,9 @@ graph LR
         B3[DiscoveryService]
     end
 
-    subgraph "Data Access"
-        C1[EntityWriter]
-        C2[MetricsWriter]
+    subgraph "Persistence"
+        C1[EntityService]
+        C2[MetricsService]
         C3[Repositories]
     end
 
@@ -114,10 +111,10 @@ graph LR
 ```
 pkg/
 ├── api/              # HTTP handlers (thin, stateless)
-├── database/         # Repository implementations, DB connection
-├── datawriter/       # Central data persistence service
+├── database/         # Repository interfaces, DB connection
 ├── discovery/        # Device discovery orchestration
 ├── models/           # Domain entities & events
+├── persistence/      # Central persistence services (Entity/Metrics)
 ├── plugin/           # Plugin contract types
 ├── poller/           # Polling orchestration
 ├── scheduler/        # Timer-based poll scheduling
@@ -137,23 +134,24 @@ sequenceDiagram
     participant Client
     participant API as API Handler
     participant CH as crudRequestChan
-    participant EW as EntityWriter
+    participant ES as EntityService
     participant DB as PostgreSQL
 
     Client->>API: POST /api/v1/monitors
     API->>API: Validate & encrypt
     API->>CH: Request{Op: create, Payload: monitor, ReplyCh}
-    activate EW
-    EW->>DB: INSERT INTO monitors
-    DB-->>EW: OK
-    EW->>CH: Response{Data: monitor}
-    deactivate EW
+    CH->>ES: Deliver Request
+    activate ES
+    ES->>DB: INSERT INTO monitors
+    DB-->>ES: OK
+    ES-->>API: Response{Data: monitor} via ReplyCh
+    deactivate ES
     API-->>Client: 201 Created
 ```
 
 **Why this pattern?**
 - API handlers have **zero repository dependencies**
-- All DB access is serialized through `EntityWriter` (single writer)
+- All DB access is serialized through `EntityService` (single writer for entities)
 - Easy to add cross-cutting concerns (logging, validation) in one place
 - Enables future distributed architectures (swap channel for message queue)
 
@@ -166,7 +164,7 @@ sequenceDiagram
     participant POL as Poller
     participant POOL as Worker Pool
     participant PLUGIN as Plugin Binary
-    participant MW as MetricsWriter
+    participant MS as MetricsService
     participant DB as PostgreSQL
 
     SCH->>SCH: Check monitor deadlines
@@ -177,8 +175,8 @@ sequenceDiagram
     POOL->>PLUGIN: JSON tasks via stdin
     PLUGIN-->>POOL: JSON results via stdout
     POOL->>POL: []plugin.Result
-    POL->>MW: []plugin.Result via pollResultChan
-    MW->>DB: INSERT INTO metrics
+    POL->>MS: []plugin.Result via pollResultChan
+    MS->>DB: INSERT INTO metrics
 ```
 
 **Key Design Decisions:**
@@ -191,24 +189,29 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant API as API Handler
-    participant CMD as provisioningCommandChan
-    participant EW as EntityWriter
+    participant CMD as provisioningEventChan
+    participant ES as EntityService
     participant DISC as DiscoveryService
     participant POOL as Worker Pool
     participant PLUGIN as Plugin Binary
     participant DB as PostgreSQL
 
     API->>CMD: EventTriggerDiscovery{profile_id}
-    EW->>EW: Fetch DiscoveryProfile
-    EW->>DISC: Event{type: update, payload: profile}
+    CMD->>ES: Deliver Event
+    activate ES
+    ES->>ES: Fetch DiscoveryProfile
+    ES->>DISC: Event{type: run_discovery, payload: profile}
+    deactivate ES
     
     DISC->>DISC: Expand CIDR to IPs
     DISC->>POOL: Submit discovery tasks
     POOL->>PLUGIN: JSON tasks + "-discovery" flag
     PLUGIN-->>POOL: JSON results with hostname
     POOL->>DISC: []plugin.Result
-    DISC->>EW: plugin.Result via discResultChan
-    EW->>DB: INSERT device + monitor
+    DISC->>ES: plugin.Result via discResultChan
+    activate ES
+    ES->>DB: INSERT device + monitor
+    deactivate ES
 ```
 
 ---
@@ -225,13 +228,13 @@ graph TD
         MC[monitorChan]
         CC[credentialChan]
         DPC[discProfileChan]
-        PROV[provisioningCommandChan]
+        PROV[provisioningEventChan]
     end
 
     subgraph "Data Channels"
-        PRC[pollResultChan - []plugin.Result]
-        DRC[discResultChan - plugin.Result]
-        S2P[schedulerToPollerChan - []*Monitor]
+        PRC["pollResultChan - []plugin.Result"]
+        DRC["discResultChan - plugin.Result"]
+        S2P["schedulerToPollerChan - []*Monitor"]
     end
 
     subgraph "Request-Reply Channels"
@@ -243,9 +246,9 @@ graph TD
     API --> METRIC
     API --> PROV
 
-    EW --> MC
-    EW --> CC
-    EW --> DPC
+    ES --> MC
+    ES --> CC
+    ES --> DPC
 
     MC --> SCH
     CC --> SCH
@@ -255,22 +258,22 @@ graph TD
     POL --> PRC
     DISC --> DRC
 
-    PRC --> MW
-    DRC --> EW
-    PROV --> EW
+    PRC --> MS
+    DRC --> ES
+    PROV --> ES
 ```
 
 ### Event Types
 
 | Event Type | Channel | Producer | Consumer | Purpose |
 |------------|---------|----------|----------|---------|
-| `create/update/delete` | monitorChan | EntityWriter | Scheduler | Update in-memory cache |
-| `create/update/delete` | credentialChan | EntityWriter | Scheduler | Update credential cache |
-| `create/update/delete` | discProfileChan | EntityWriter | DiscoveryService | Trigger discovery runs |
-| `trigger_discovery` | provisioningCommandChan | API | EntityWriter | Manual discovery trigger |
-| `provision_device` | provisioningCommandChan | API | EntityWriter | Manual device provisioning |
-| `[]plugin.Result` | pollResultChan | Poller | MetricsWriter | Persist metrics |
-| `plugin.Result` | discResultChan | DiscoveryService | EntityWriter | Provision from discovery |
+| `create/update/delete` | monitorChan | EntityService | Scheduler | Update in-memory cache |
+| `create/update/delete` | credentialChan | EntityService | Scheduler | Update credential cache |
+| `create/update/delete` | discProfileChan | EntityService | DiscoveryService | Trigger discovery runs |
+| `trigger_discovery` | provisioningEventChan | API | EntityService | Manual discovery trigger |
+| `provision_device` | provisioningEventChan | API | EntityService | Manual device provisioning |
+| `[]plugin.Result` | pollResultChan | Poller | MetricsService | Persist metrics |
+| `plugin.Result` | discResultChan | DiscoveryService | EntityService | Provision from discovery |
 | `[]*models.Monitor` | schedulerToPollerChan | Scheduler | Poller | Dispatch poll tasks |
 
 ### Event Publishing Pattern
@@ -311,12 +314,12 @@ graph LR
     end
 
     subgraph "Service Layer"
-        EW[EntityWriter]
+        ES[EntityService]
     end
 
     H -->|"sends Request"| CH
-    CH -->|"receives"| EW
-    EW -->|"sends Response"| H
+    CH -->|"receives"| ES
+    ES -->|"sends Response"| H
 ```
 
 **Implementation:**
@@ -385,12 +388,12 @@ The Scheduler maintains an **in-memory cache** synchronized via events:
 ```mermaid
 graph TD
     DB[(PostgreSQL)]
-    EW[EntityWriter]
+    ES[EntityService]
     CH[monitorChan]
     SCH[Scheduler Cache]
 
     DB -->|"initial load"| SCH
-    EW -->|"Event{Create/Update/Delete}"| CH
+    ES -->|"Event{Create/Update/Delete}"| CH
     CH -->|"sync"| SCH
 ```
 
@@ -482,13 +485,13 @@ Application entry point. Initializes all channels, repositories, and services. S
 - **provisioning.go**: Manual discovery/provisioning command handlers
 
 ### [pkg/database/](file:///home/prem-modha/projects/nms/pkg/database)
+- **db.go**: Database connection and GORM initialization
 - **repository.go**: Generic `Repository[T]` interface and GORM implementation
-- **metricsRepository.go**: Specialized JSONB queries for time-series metrics
 - **encryption.go**: AES encryption for credential payloads
 
-### [pkg/datawriter/](file:///home/prem-modha/projects/nms/pkg/datawriter)
-- **entityWriter.go**: Central CRUD service, discovery provisioning, event publishing
-- **metricsWriter.go**: High-volume metrics persistence
+### [pkg/persistence/](file:///home/prem-modha/projects/nms/pkg/persistence)
+- **entityService.go**: Central CRUD service, discovery provisioning, event publishing
+- **metricsService.go**: High-volume metrics persistence and specialized JSONB queries
 
 ### [pkg/scheduler/scheduler.go](file:///home/prem-modha/projects/nms/pkg/scheduler/scheduler.go)
 Timer-based monitor scheduling with in-memory cache. Batch fping for reachability checks.

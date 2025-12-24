@@ -1,0 +1,9 @@
+Endpoint Added to NMS:
+----------------------
+VM Name: winRm_a_clone_1 (clone1)
+Target: 127.0.0.1
+Port: 25985
+Protocol: WinRM
+Credentials: Same as WIN A (Username: vboxuser, Password: admin)
+NMS Discovery Profile ID: 18
+Added at: 2025-12-23 14:52 (local time)

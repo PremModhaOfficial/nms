@@ -22,15 +22,12 @@ func sendEvent(ch chan<- models.Event, event models.Event) {
 	}
 }
 
-// EntityService handles all entity CRUD operations, discovery provisioning, and commands.
+// EntityService handles all entity CRUD operations, discovery provisioning, and eventsChan.
 type EntityService struct {
 	// Input channels
-	discoveryResults <-chan plugin.Result
-	commands         <-chan models.Event
-	requests         <-chan models.Request
-
-	// Database
-	db *gorm.DB
+	discoveryResultsChan <-chan plugin.Result
+	eventsChan           <-chan models.Event
+	requestsChan         <-chan models.Request
 
 	// Repositories
 	credentialRepo       database.Repository[models.CredentialProfile]
@@ -47,26 +44,21 @@ type EntityService struct {
 // NewEntityService creates a new entity writer service.
 func NewEntityService(
 	discoveryResults <-chan plugin.Result,
-	commands <-chan models.Event,
+	eventsChan <-chan models.Event,
 	requests <-chan models.Request,
 	db *gorm.DB,
-	credentialRepo database.Repository[models.CredentialProfile],
-	monitorRepo database.Repository[models.Monitor],
-	deviceRepo database.Repository[models.Device],
-	discoveryProfileRepo database.Repository[models.DiscoveryProfile],
 	discoveryProfileEvents chan<- models.Event,
 	monitorEvents chan<- models.Event,
 	credentialEvents chan<- models.Event,
 ) *EntityService {
 	return &EntityService{
-		discoveryResults:       discoveryResults,
-		commands:               commands,
-		requests:               requests,
-		db:                     db,
-		credentialRepo:         credentialRepo,
-		monitorRepo:            monitorRepo,
-		deviceRepo:             deviceRepo,
-		discoveryProfileRepo:   discoveryProfileRepo,
+		discoveryResultsChan:   discoveryResults,
+		eventsChan:             eventsChan,
+		requestsChan:           requests,
+		credentialRepo:         database.NewGormRepository[models.CredentialProfile](db),
+		monitorRepo:            database.NewGormRepository[models.Monitor](db),
+		deviceRepo:             database.NewGormRepository[models.Device](db),
+		discoveryProfileRepo:   database.NewGormRepository[models.DiscoveryProfile](db),
 		discoveryProfileEvents: discoveryProfileEvents,
 		monitorEvents:          monitorEvents,
 		credentialEvents:       credentialEvents,
@@ -82,11 +74,11 @@ func (writer *EntityService) Run(ctx context.Context) {
 		case <-ctx.Done():
 			slog.Info("Stopping entity writer", "component", "EntityService")
 			return
-		case result := <-writer.discoveryResults:
+		case result := <-writer.discoveryResultsChan:
 			writer.provisionFromDiscovery(ctx, result)
-		case cmd := <-writer.commands:
-			writer.handleCommand(ctx, cmd)
-		case req := <-writer.requests:
+		case event := <-writer.eventsChan:
+			writer.handleEvent(ctx, event)
+		case req := <-writer.requestsChan:
 			writer.handleCrudRequest(ctx, req)
 		}
 	}
@@ -97,12 +89,9 @@ func (writer *EntityService) provisionFromDiscovery(ctx context.Context, result 
 	slog.Info("Provisioning device from discovery", "component", "EntityService", "hostname", result.Hostname, "target", result.Target)
 
 	// Check if device already exists for this IP
-	var existingDevice models.Device
-	err := writer.db.WithContext(ctx).
-		Where("ip_address = ?", result.Target).
-		First(&existingDevice).Error
+	existingDevice, err := writer.deviceRepo.GetByField(ctx, "ip_address", result.Target)
 
-	if err == nil {
+	if err == nil && existingDevice != nil {
 		slog.Debug("Device already exists", "component", "EntityService", "target", result.Target, "device_id", existingDevice.ID)
 		return
 	}
@@ -129,27 +118,36 @@ func (writer *EntityService) provisionFromDiscovery(ctx context.Context, result 
 	}
 	slog.Info("Created device", "component", "EntityService", "device_id", createdDevice.ID, "target", result.Target)
 
-	// Create Monitor record
-	monitor := models.Monitor{
-		Hostname:            result.Hostname,
-		IPAddress:           result.Target,
-		PluginID:            pluginID,
-		Port:                result.Port,
-		CredentialProfileID: result.CredentialProfileID,
-		DiscoveryProfileID:  result.DiscoveryProfileID,
-		Status:              "active",
+	// Create Monitor record if AutoProvision is enabled
+	profile, err := writer.discoveryProfileRepo.Get(ctx, result.DiscoveryProfileID)
+	if err != nil {
+		slog.Warn("Could not fetch discovery profile to check AutoProvision flag", "component", "EntityService", "profile_id", result.DiscoveryProfileID, "error", err)
 	}
 
-	createdMonitor, err := writer.monitorRepo.Create(ctx, &monitor)
-	if err != nil {
-		slog.Error("Failed to create monitor", "component", "EntityService", "target", result.Target, "error", err)
-		return
+	if profile != nil && profile.AutoProvision {
+		monitor := models.Monitor{
+			Hostname:            result.Hostname,
+			IPAddress:           result.Target,
+			PluginID:            pluginID,
+			Port:                result.Port,
+			CredentialProfileID: result.CredentialProfileID,
+			DiscoveryProfileID:  result.DiscoveryProfileID,
+			Status:              "active",
+		}
+
+		createdMonitor, err := writer.monitorRepo.Create(ctx, &monitor)
+		if err != nil {
+			slog.Error("Failed to create monitor", "component", "EntityService", "target", result.Target, "error", err)
+			return
+		}
+		slog.Info("Created monitor (AutoProvision enabled)", "component", "EntityService", "monitor_id", createdMonitor.ID, "hostname", result.Hostname)
+	} else {
+		slog.Info("Skipping auto-provisioning for monitor (AutoProvision disabled or profile not found)", "component", "EntityService", "hostname", result.Hostname)
 	}
-	slog.Info("Created monitor", "component", "EntityService", "monitor_id", createdMonitor.ID, "hostname", result.Hostname)
 }
 
-// handleCommand processes manual provisioning commands.
-func (writer *EntityService) handleCommand(ctx context.Context, event models.Event) {
+// handleEvent processes manual provisioning eventsChan.
+func (writer *EntityService) handleEvent(ctx context.Context, event models.Event) {
 	switch event.Type {
 	case models.EventTriggerDiscovery:
 		writer.triggerDiscovery(ctx, event)
@@ -162,7 +160,7 @@ func (writer *EntityService) handleCommand(ctx context.Context, event models.Eve
 
 // triggerDiscovery fetches a discovery profile and publishes an update event to start discovery.
 func (writer *EntityService) triggerDiscovery(ctx context.Context, event models.Event) {
-	cmd, ok := event.Payload.(*models.DiscoveryTriggerCommand)
+	cmd, ok := event.Payload.(*models.DiscoveryTriggerEvent)
 	if !ok {
 		slog.Error("Invalid payload for EventTriggerDiscovery", "component", "EntityService")
 		return
@@ -175,7 +173,7 @@ func (writer *EntityService) triggerDiscovery(ctx context.Context, event models.
 	}
 
 	go sendEvent(writer.discoveryProfileEvents, models.Event{
-		Type:    models.EventUpdate,
+		Type:    models.EventRunDiscovery,
 		Payload: profile,
 	})
 
@@ -184,7 +182,7 @@ func (writer *EntityService) triggerDiscovery(ctx context.Context, event models.
 
 // provisionDevice fetches a device and creates a monitor for it.
 func (writer *EntityService) provisionDevice(ctx context.Context, event models.Event) {
-	cmd, ok := event.Payload.(*models.DeviceProvisionCommand)
+	cmd, ok := event.Payload.(*models.DeviceProvisionEvent)
 	if !ok {
 		slog.Error("Invalid payload for EventProvisionDevice", "component", "EntityService")
 		return
@@ -283,7 +281,7 @@ func handleCRUD[T any](
 	return resp
 }
 
-// handleDiscoveryProfileCRUD handles DiscoveryProfile CRUD and enriches events with credential data.
+// handleDiscoveryProfileCRUD handles DiscoveryProfile CRUD and enriches eventsChan with credential data.
 func (writer *EntityService) handleDiscoveryProfileCRUD(ctx context.Context, req models.Request) models.Response {
 	var resp models.Response
 

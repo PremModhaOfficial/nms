@@ -26,13 +26,13 @@ type Job[T any] struct {
 }
 
 // NewPool creates a new generic worker pool
-func NewPool[T any, R any](workerCount int, poolName string, args ...string) *Pool[T, R] {
+func NewPool[T any, R any](workerCount int, poolName string, bufferSize int, args ...string) *Pool[T, R] {
 	return &Pool[T, R]{
 		workerCount: workerCount,
 		poolName:    poolName,
 		args:        args,
-		jobChan:     make(chan Job[T], 100),
-		resultChan:  make(chan []R, 100),
+		jobChan:     make(chan Job[T], bufferSize),
+		resultChan:  make(chan []R, bufferSize),
 	}
 }
 
