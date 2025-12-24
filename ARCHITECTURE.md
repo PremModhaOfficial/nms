@@ -170,7 +170,7 @@ sequenceDiagram
     SCH->>SCH: Check monitor deadlines
     SCH->>FPING: Batch ping IPs
     FPING-->>SCH: Reachable IPs
-    SCH->>POL: []*Monitor via schedulerToPollerChan
+    SCH->>POL: []*Device via schedulerToPollerChan
     POL->>POOL: Submit tasks by plugin_id
     POOL->>PLUGIN: JSON tasks via stdin
     PLUGIN-->>POOL: JSON results via stdout
@@ -234,7 +234,7 @@ graph TD
     subgraph "Data Channels"
         PRC["pollResultChan - []plugin.Result"]
         DRC["discResultChan - plugin.Result"]
-        S2P["schedulerToPollerChan - []*Monitor"]
+        S2P["schedulerToPollerChan - []*Device"]
     end
 
     subgraph "Request-Reply Channels"
@@ -274,7 +274,7 @@ graph TD
 | `provision_device` | provisioningEventChan | API | EntityService | Manual device provisioning |
 | `[]plugin.Result` | pollResultChan | Poller | MetricsService | Persist metrics |
 | `plugin.Result` | discResultChan | DiscoveryService | EntityService | Provision from discovery |
-| `[]*models.Monitor` | schedulerToPollerChan | Scheduler | Poller | Dispatch poll tasks |
+| `[]*models.Device` | schedulerToPollerChan | Scheduler | Poller | Dispatch poll tasks |
 
 ### Event Publishing Pattern
 
@@ -506,7 +506,7 @@ Discovery profile processing. CIDR expansion, plugin execution, result enrichmen
 Generic worker pool for plugin execution. Handles stdin/stdout JSON communication.
 
 ### [pkg/models/](file:///home/prem-modha/projects/nms/pkg/models)
-- **models.go**: Domain entities (Monitor, Device, CredentialProfile, etc.)
+- **models.go**: Domain entities (Device, CredentialProfile, etc.)
 - **event.go**: Event types for inter-service communication
 - **request.go**: Request/Response types for synchronous channel communication
 

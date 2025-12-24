@@ -12,22 +12,22 @@ import (
 	"nms/pkg/worker"
 )
 
-// Poller manages plugin execution for polling monitors.
+// Poller manages plugin execution for polling devices.
 type Poller struct {
 	pool          *worker.Pool[plugin.Task, plugin.Result]
 	pluginDir     string
 	plugins       map[string]string // pluginID -> binary path
 	encryptionKey string
 
-	// Input channel: receives batches of monitors from scheduler
-	InputChan <-chan []*models.Monitor
+	// Input channel: receives batches of devices from scheduler
+	InputChan <-chan []*models.Device
 
 	// Output channel: sends aggregated poll results
 	OutputChan chan<- []plugin.Result
 }
 
 // NewPoller creates a new Poller instance.
-func NewPoller(pluginDir string, encryptionKey string, workerCount int, bufferSize int, inputChan <-chan []*models.Monitor, outputChan chan<- []plugin.Result) *Poller {
+func NewPoller(pluginDir string, encryptionKey string, workerCount int, bufferSize int, inputChan <-chan []*models.Device, outputChan chan<- []plugin.Result) *Poller {
 	pool := worker.NewPool[plugin.Task, plugin.Result](workerCount, "PollPool", bufferSize)
 
 	p := &Poller{
@@ -90,51 +90,51 @@ func (poller *Poller) Run(ctx context.Context) {
 			slog.Info("Context cancelled, shutting down", "component", "Poller")
 			return
 
-		case monitors := <-poller.InputChan:
-			slog.Info("Received monitors from scheduler", "component", "Poller", "count", len(monitors))
+		case devices := <-poller.InputChan:
+			slog.Info("Received devices from scheduler", "component", "Poller", "count", len(devices))
 
-			// Group monitors by PluginID
-			grouped := poller.groupByProtocol(monitors)
+			// Group devices by PluginID
+			grouped := poller.groupByProtocol(devices)
 
 			// Submit jobs to pool with binary paths
-			for pluginID, monitorList := range grouped {
+			for pluginID, deviceList := range grouped {
 				binPath, exists := poller.plugins[pluginID]
 				if !exists {
-					slog.Warn("Plugin not found", "component", "Poller", "plugin_id", pluginID, "monitor_count", len(monitorList))
+					slog.Error("Plugin not found", "component", "Poller", "plugin_id", pluginID, "device_count", len(deviceList))
 					continue
 				}
 
-				tasks := poller.createTasks(monitorList)
+				tasks := poller.createTasks(deviceList)
 				poller.pool.Submit(binPath, tasks)
 			}
 		}
 	}
 }
 
-// groupByProtocol groups monitors by their PluginID.
-func (poller *Poller) groupByProtocol(monitors []*models.Monitor) map[string][]*models.Monitor {
-	grouped := make(map[string][]*models.Monitor)
-	for _, m := range monitors {
-		grouped[m.PluginID] = append(grouped[m.PluginID], m)
+// groupByProtocol groups devices by their PluginID.
+func (poller *Poller) groupByProtocol(devices []*models.Device) map[string][]*models.Device {
+	grouped := make(map[string][]*models.Device)
+	for _, d := range devices {
+		grouped[d.PluginID] = append(grouped[d.PluginID], d)
 	}
 	return grouped
 }
 
-// createTasks converts monitors to plugin.Task
-func (poller *Poller) createTasks(monitors []*models.Monitor) []plugin.Task {
-	tasks := make([]plugin.Task, 0, len(monitors))
-	for _, m := range monitors {
+// createTasks converts devices to plugin.Task
+func (poller *Poller) createTasks(devices []*models.Device) []plugin.Task {
+	tasks := make([]plugin.Task, 0, len(devices))
+	for _, d := range devices {
 		// Decrypt credentials payload
-		payload, err := api.DecryptPayload(m.CredentialProfile, poller.encryptionKey)
+		payload, err := api.DecryptPayload(d.CredentialProfile, poller.encryptionKey)
 		if err != nil {
-			slog.Error("Failed to decrypt credentials", "component", "Poller", "monitor_id", m.ID, "error", err)
+			slog.Error("Failed to decrypt credentials", "component", "Poller", "device_id", d.ID, "error", err)
 			payload = nil // Plugin will handle missing credentials
 		}
 
 		task := plugin.Task{
-			MonitorID:   m.ID,
-			Target:      m.IPAddress,
-			Port:        m.Port,
+			DeviceID:    d.ID,
+			Target:      d.IPAddress,
+			Port:        d.Port,
 			Credentials: payload,
 		}
 		tasks = append(tasks, task)

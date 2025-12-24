@@ -48,7 +48,6 @@ for item in data:
     # 2. Create Credential Profile
     cred_payload = {
         "name": item.get('request_id', 'imported') + "_creds",
-        "description": "Imported from " + seed_file,
         "protocol": "winrm",
         "payload": json.dumps(item['credentials'])
     }

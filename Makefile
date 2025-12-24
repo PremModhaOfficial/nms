@@ -7,10 +7,10 @@ all: help
 build:
 	@echo "Building NMS Server..."
 	@mkdir -p bin
-	go build -o bin/nms-server cmd/server/main.go
+	go build -o bin/nms-server cmd/app/main.go
 	@echo "Building winrm plugin..."
 	@mkdir -p plugins
-	go build -o plugins/winrm plugin-code/winrm/main.go
+	cd plugin-code/winrm && go build -o ../../plugins/winrm main.go
 	@echo "Build complete."
 
 ## run: Run the app using start.sh (includes secure env setup)

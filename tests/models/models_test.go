@@ -20,7 +20,7 @@ func TestMetricStruct(t *testing.T) {
 	tests := []struct {
 		name        string
 		id          int64
-		monitorID   int64
+		deviceID    int64
 		data        json.RawMessage
 		timestamp   time.Time
 		expectError bool
@@ -28,7 +28,7 @@ func TestMetricStruct(t *testing.T) {
 		{
 			name:        "Valid metric with valid data",
 			id:          1,
-			monitorID:   100,
+			deviceID:    100,
 			data:        json.RawMessage(`{"cpu": 50, "memory": 75}`),
 			timestamp:   time.Now(),
 			expectError: false,
@@ -36,7 +36,7 @@ func TestMetricStruct(t *testing.T) {
 		{
 			name:        "Metric with empty data",
 			id:          2,
-			monitorID:   101,
+			deviceID:    101,
 			data:        json.RawMessage(`{}`),
 			timestamp:   time.Now(),
 			expectError: false,
@@ -44,7 +44,7 @@ func TestMetricStruct(t *testing.T) {
 		{
 			name:        "Metric with nil data",
 			id:          3,
-			monitorID:   102,
+			deviceID:    102,
 			data:        nil,
 			timestamp:   time.Now(),
 			expectError: false,
@@ -55,7 +55,7 @@ func TestMetricStruct(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			metric := models.Metric{
 				ID:        tt.id,
-				MonitorID: tt.monitorID,
+				DeviceID:  tt.deviceID,
 				Data:      tt.data,
 				Timestamp: tt.timestamp,
 			}
@@ -63,8 +63,8 @@ func TestMetricStruct(t *testing.T) {
 			if metric.ID != tt.id {
 				t.Errorf("Expected ID %d, got %d", tt.id, metric.ID)
 			}
-			if metric.MonitorID != tt.monitorID {
-				t.Errorf("Expected MonitorID %d, got %d", tt.monitorID, metric.MonitorID)
+			if metric.DeviceID != tt.deviceID {
+				t.Errorf("Expected DeviceID %d, got %d", tt.deviceID, metric.DeviceID)
 			}
 			if string(metric.Data) != string(tt.data) {
 				t.Errorf("Expected Data %s, got %s", tt.data, metric.Data)
@@ -89,25 +89,20 @@ func TestCredentialProfileStruct(t *testing.T) {
 		name        string
 		id          int64
 		nameField   string
-		description string
 		protocol    string
 		payload     json.RawMessage
 		expectError bool
 	}{
 		{
-			name:        "Valid credential profile",
-			id:          1,
-			nameField:   "Test Profile",
-			description: "Test Description",
-			protocol:    "ssh",
-			payload:     json.RawMessage(`{"key": "value"}`),
-			expectError: false,
+			name:      "Valid credential profile",
+			id:        1,
+			nameField: "Test Profile",
+			protocol:  "ssh",
 		},
 		{
-			name:        "Credential profile with empty description",
+			name:        "Credential profile with minimal fields",
 			id:          2,
 			nameField:   "Another Profile",
-			description: "",
 			protocol:    "winrm",
 			payload:     json.RawMessage(`{"other": "data"}`),
 			expectError: false,
@@ -117,13 +112,12 @@ func TestCredentialProfileStruct(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			profile := models.CredentialProfile{
-				ID:          tt.id,
-				Name:        tt.nameField,
-				Description: tt.description,
-				Protocol:    tt.protocol,
-				Payload:     tt.payload,
-				CreatedAt:   time.Now(),
-				UpdatedAt:   time.Now(),
+				ID:        tt.id,
+				Name:      tt.nameField,
+				Protocol:  tt.protocol,
+				Payload:   tt.payload,
+				CreatedAt: time.Now(),
+				UpdatedAt: time.Now(),
 			}
 
 			if profile.ID != tt.id {
@@ -131,9 +125,6 @@ func TestCredentialProfileStruct(t *testing.T) {
 			}
 			if profile.Name != tt.nameField {
 				t.Errorf("Expected Name %s, got %s", tt.nameField, profile.Name)
-			}
-			if profile.Description != tt.description {
-				t.Errorf("Expected Description %s, got %s", tt.description, profile.Description)
 			}
 			if profile.Protocol != tt.protocol {
 				t.Errorf("Expected Protocol %s, got %s", tt.protocol, profile.Protocol)
@@ -222,67 +213,6 @@ func TestDiscoveryProfileStruct(t *testing.T) {
 
 func TestDeviceStruct(t *testing.T) {
 	tests := []struct {
-		name               string
-		id                 int64
-		discoveryProfileID int64
-		ipAddress          string
-		port               int
-		status             string
-		expectError        bool
-	}{
-		{
-			name:               "Valid device with active status",
-			id:                 1,
-			discoveryProfileID: 1,
-			ipAddress:          "192.168.1.10",
-			port:               22,
-			status:             "active",
-			expectError:        false,
-		},
-		{
-			name:               "Device with new status",
-			id:                 2,
-			discoveryProfileID: 2,
-			ipAddress:          "10.0.0.5",
-			port:               80,
-			status:             "new",
-			expectError:        false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			device := models.Device{
-				ID:                 tt.id,
-				DiscoveryProfileID: tt.discoveryProfileID,
-				IPAddress:          tt.ipAddress,
-				Port:               tt.port,
-				Status:             tt.status,
-				CreatedAt:          time.Now(),
-				UpdatedAt:          time.Now(),
-			}
-
-			if device.ID != tt.id {
-				t.Errorf("Expected ID %d, got %d", tt.id, device.ID)
-			}
-			if device.DiscoveryProfileID != tt.discoveryProfileID {
-				t.Errorf("Expected DiscoveryProfileID %d, got %d", tt.discoveryProfileID, device.DiscoveryProfileID)
-			}
-			if device.IPAddress != tt.ipAddress {
-				t.Errorf("Expected IPAddress %s, got %s", tt.ipAddress, device.IPAddress)
-			}
-			if device.Port != tt.port {
-				t.Errorf("Expected Port %d, got %d", tt.port, device.Port)
-			}
-			if device.Status != tt.status {
-				t.Errorf("Expected Status %s, got %s", tt.status, device.Status)
-			}
-		})
-	}
-}
-
-func TestMonitorStruct(t *testing.T) {
-	tests := []struct {
 		name                   string
 		id                     int64
 		ipAddress              string
@@ -295,7 +225,7 @@ func TestMonitorStruct(t *testing.T) {
 		expectError            bool
 	}{
 		{
-			name:                   "Valid monitor with active status",
+			name:                   "Valid device with active status",
 			id:                     1,
 			ipAddress:              "192.168.1.100",
 			pluginID:               "ssh",
@@ -307,7 +237,7 @@ func TestMonitorStruct(t *testing.T) {
 			expectError:            false,
 		},
 		{
-			name:                   "Monitor with inactive status",
+			name:                   "Device with inactive status",
 			id:                     2,
 			ipAddress:              "10.0.0.10",
 			pluginID:               "winrm",
@@ -322,7 +252,7 @@ func TestMonitorStruct(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			monitor := models.Monitor{
+			device := models.Device{
 				ID:                     tt.id,
 				IPAddress:              tt.ipAddress,
 				PluginID:               tt.pluginID,
@@ -335,29 +265,29 @@ func TestMonitorStruct(t *testing.T) {
 				UpdatedAt:              time.Now(),
 			}
 
-			if monitor.ID != tt.id {
-				t.Errorf("Expected ID %d, got %d", tt.id, monitor.ID)
+			if device.ID != tt.id {
+				t.Errorf("Expected ID %d, got %d", tt.id, device.ID)
 			}
-			if monitor.IPAddress != tt.ipAddress {
-				t.Errorf("Expected IPAddress %s, got %s", tt.ipAddress, monitor.IPAddress)
+			if device.IPAddress != tt.ipAddress {
+				t.Errorf("Expected IPAddress %s, got %s", tt.ipAddress, device.IPAddress)
 			}
-			if monitor.PluginID != tt.pluginID {
-				t.Errorf("Expected PluginID %s, got %s", tt.pluginID, monitor.PluginID)
+			if device.PluginID != tt.pluginID {
+				t.Errorf("Expected PluginID %s, got %s", tt.pluginID, device.PluginID)
 			}
-			if monitor.Port != tt.port {
-				t.Errorf("Expected Port %d, got %d", tt.port, monitor.Port)
+			if device.Port != tt.port {
+				t.Errorf("Expected Port %d, got %d", tt.port, device.Port)
 			}
-			if monitor.CredentialProfileID != tt.credentialProfileID {
-				t.Errorf("Expected CredentialProfileID %d, got %d", tt.credentialProfileID, monitor.CredentialProfileID)
+			if device.CredentialProfileID != tt.credentialProfileID {
+				t.Errorf("Expected CredentialProfileID %d, got %d", tt.credentialProfileID, device.CredentialProfileID)
 			}
-			if monitor.DiscoveryProfileID != tt.discoveryProfileID {
-				t.Errorf("Expected DiscoveryProfileID %d, got %d", tt.discoveryProfileID, monitor.DiscoveryProfileID)
+			if device.DiscoveryProfileID != tt.discoveryProfileID {
+				t.Errorf("Expected DiscoveryProfileID %d, got %d", tt.discoveryProfileID, device.DiscoveryProfileID)
 			}
-			if monitor.PollingIntervalSeconds != tt.pollingIntervalSeconds {
-				t.Errorf("Expected PollingIntervalSeconds %d, got %d", tt.pollingIntervalSeconds, monitor.PollingIntervalSeconds)
+			if device.PollingIntervalSeconds != tt.pollingIntervalSeconds {
+				t.Errorf("Expected PollingIntervalSeconds %d, got %d", tt.pollingIntervalSeconds, device.PollingIntervalSeconds)
 			}
-			if monitor.Status != tt.status {
-				t.Errorf("Expected Status %s, got %s", tt.status, monitor.Status)
+			if device.Status != tt.status {
+				t.Errorf("Expected Status %s, got %s", tt.status, device.Status)
 			}
 		})
 	}
@@ -383,11 +313,6 @@ func TestTableNameMethods(t *testing.T) {
 			name:     "Device table name",
 			table:    models.Device{}.TableName(),
 			expected: "devices",
-		},
-		{
-			name:     "Monitor table name",
-			table:    models.Monitor{}.TableName(),
-			expected: "monitors",
 		},
 	}
 
@@ -415,10 +340,6 @@ func TestGetIDMethods(t *testing.T) {
 		},
 		{
 			name:     "Device GetID",
-			entityID: 300,
-		},
-		{
-			name:     "Monitor GetID",
 			entityID: 400,
 		},
 	}
@@ -440,11 +361,6 @@ func TestGetIDMethods(t *testing.T) {
 				d := models.Device{ID: tt.entityID}
 				if d.GetID() != tt.entityID {
 					t.Errorf("Expected GetID() to return %d, got %d", tt.entityID, d.GetID())
-				}
-			case "TestGetIDMethods/monitor_GetID":
-				m := models.Monitor{ID: tt.entityID}
-				if m.GetID() != tt.entityID {
-					t.Errorf("Expected GetID() to return %d, got %d", tt.entityID, m.GetID())
 				}
 			}
 		})

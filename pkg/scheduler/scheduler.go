@@ -12,22 +12,22 @@ import (
 	"nms/pkg/models"
 )
 
-// MonitorWithDeadline combines a monitor with its next scheduled polling time.
-type MonitorWithDeadline struct {
-	Monitor  *models.Monitor
+// DeviceWithDeadline combines a device with its next scheduled polling time.
+type DeviceWithDeadline struct {
+	Device   *models.Device
 	Deadline time.Time
 }
 
-// Scheduler manages the scheduling of monitors based on deadlines.
+// Scheduler manages the scheduling of devices based on deadlines.
 type Scheduler struct {
 	// Cache maps
-	monitors    map[int64]*MonitorWithDeadline
+	devices     map[int64]*DeviceWithDeadline
 	credentials map[int64]*models.CredentialProfile
 
 	// Channels - received from outside for event-driven communication
-	monitorEvents <-chan models.Event      // Monitor CRUD events
-	credEvents    <-chan models.Event      // Credential CRUD events
-	OutputChan    chan<- []*models.Monitor // Sends qualified monitors to poller
+	deviceEvents <-chan models.Event     // Device CRUD events
+	credEvents   <-chan models.Event     // Credential CRUD events
+	OutputChan   chan<- []*models.Device // Sends qualified devices to poller
 
 	// Config
 	fpingPath    string
@@ -39,44 +39,44 @@ type Scheduler struct {
 // NewScheduler creates a new Scheduler instance.
 // monitorEvents and credEvents are receive-only channels from the communication layer.
 func NewScheduler(
-	monitorEvents <-chan models.Event,
+	deviceEvents <-chan models.Event,
 	credEvents <-chan models.Event,
-	outputChan chan<- []*models.Monitor,
+	outputChan chan<- []*models.Device,
 	fpingPath string,
 	tickIntervalSec, fpingTimeoutMs, fpingRetries int,
 ) *Scheduler {
 	return &Scheduler{
-		monitors:      make(map[int64]*MonitorWithDeadline),
-		credentials:   make(map[int64]*models.CredentialProfile),
-		monitorEvents: monitorEvents,
-		credEvents:    credEvents,
-		OutputChan:    outputChan,
-		fpingPath:     fpingPath,
-		tickInterval:  time.Duration(tickIntervalSec) * time.Second,
-		fpingTimeout:  fpingTimeoutMs,
-		fpingRetries:  fpingRetries,
+		devices:      make(map[int64]*DeviceWithDeadline),
+		credentials:  make(map[int64]*models.CredentialProfile),
+		deviceEvents: deviceEvents,
+		credEvents:   credEvents,
+		OutputChan:   outputChan,
+		fpingPath:    fpingPath,
+		tickInterval: time.Duration(tickIntervalSec) * time.Second,
+		fpingTimeout: fpingTimeoutMs,
+		fpingRetries: fpingRetries,
 	}
 }
 
 // LoadCache populates the internal maps and initializes deadlines.
-func (sched *Scheduler) LoadCache(monitors []*models.Monitor, creds []*models.CredentialProfile) {
+func (sched *Scheduler) LoadCache(devices []*models.Device, creds []*models.CredentialProfile) {
 	slog.Info("Loading credentials to cache", "component", "Scheduler", "count", len(creds))
 	// Populate sched.credentials map
 	for _, cred := range creds {
 		sched.credentials[cred.ID] = cred
 	}
 
-	slog.Info("Loading monitors to cache", "component", "Scheduler", "count", len(monitors))
-	// Populate sched.monitors map by creating MonitorWithDeadline for each monitor
+	slog.Info("Loading devices to cache", "component", "Scheduler", "count", len(devices))
+	// Populate sched.devices map by creating DeviceWithDeadline for each device
 	now := time.Now()
-	for _, mon := range monitors {
-		sched.monitors[mon.ID] = &MonitorWithDeadline{
-			Monitor:  mon,
+	for _, dev := range devices {
+		sched.devices[dev.ID] = &DeviceWithDeadline{
+			Device:   dev,
 			Deadline: now, // Set initial Deadline to now so they're immediately eligible
 		}
-		slog.Info("Monitor loaded to cache", "component", "Scheduler", "monitor_id", mon.ID, "ip", mon.IPAddress, "interval", mon.PollingIntervalSeconds, "deadline", now.Format(time.RFC3339))
+		slog.Info("Device loaded to cache", "component", "Scheduler", "device_id", dev.ID, "ip", dev.IPAddress, "interval", dev.PollingIntervalSeconds, "deadline", now.Format(time.RFC3339))
 	}
-	slog.Info("Cache load complete", "component", "Scheduler", "monitor_count", len(sched.monitors), "credential_count", len(sched.credentials))
+	slog.Info("Cache load complete", "component", "Scheduler", "device_count", len(sched.devices), "credential_count", len(sched.credentials))
 }
 
 // Run starts the main loop.
@@ -91,9 +91,9 @@ func (sched *Scheduler) Run(ctx context.Context) {
 			slog.Info("Context cancelled, shutting down", "component", "Scheduler")
 			return
 
-		case event := <-sched.monitorEvents:
-			slog.Debug("Received monitor event", "component", "Scheduler", "event_type", event.Type)
-			sched.processMonitorEvent(event)
+		case event := <-sched.deviceEvents:
+			slog.Debug("Received device event", "component", "Scheduler", "event_type", event.Type)
+			sched.processDeviceEvent(event)
 
 		case event := <-sched.credEvents:
 			slog.Debug("Received credential event", "component", "Scheduler", "event_type", event.Type)
@@ -106,24 +106,24 @@ func (sched *Scheduler) Run(ctx context.Context) {
 	}
 }
 
-// processMonitorEvent handles CRUD events for monitors.
-func (sched *Scheduler) processMonitorEvent(event models.Event) {
-	payload, ok := event.Payload.(*models.Monitor)
+// processDeviceEvent handles CRUD events for devices.
+func (sched *Scheduler) processDeviceEvent(event models.Event) {
+	payload, ok := event.Payload.(*models.Device)
 	if !ok {
-		slog.Error("Invalid payload type in monitor event", "component", "Scheduler")
+		slog.Error("Invalid payload type in device event", "component", "Scheduler")
 		return
 	}
 
 	switch event.Type {
 	case models.EventCreate, models.EventUpdate:
-		slog.Info("Processing monitor event", "component", "Scheduler", "type", event.Type, "monitor_id", payload.ID, "ip", payload.IPAddress)
-		sched.monitors[payload.ID] = &MonitorWithDeadline{
-			Monitor:  payload,
-			Deadline: time.Now(), // New/updated monitors are immediately eligible
+		slog.Info("Processing device event", "component", "Scheduler", "type", event.Type, "device_id", payload.ID, "ip", payload.IPAddress)
+		sched.devices[payload.ID] = &DeviceWithDeadline{
+			Device:   payload,
+			Deadline: time.Now(), // New/updated devices are immediately eligible
 		}
 	case models.EventDelete:
-		slog.Info("Deleting monitor from cache", "component", "Scheduler", "monitor_id", payload.ID)
-		delete(sched.monitors, payload.ID)
+		slog.Info("Deleting device from cache", "component", "Scheduler", "device_id", payload.ID)
+		delete(sched.devices, payload.ID)
 	}
 }
 
@@ -151,22 +151,22 @@ func (sched *Scheduler) schedule() {
 	slog.Debug("Checking deadlines", "component", "Scheduler", "now", now.Format(time.RFC3339))
 
 	// 1. Identify Candidates (those where deadline <= time.Now())
-	candidates := make([]*MonitorWithDeadline, 0)
+	candidates := make([]*DeviceWithDeadline, 0)
 	ips := make([]string, 0)
 	ipSet := make(map[string]bool) // Deduplicate IPs
 
-	for _, mwd := range sched.monitors {
-		if mwd.Deadline.Before(now) || mwd.Deadline.Equal(now) {
-			candidates = append(candidates, mwd)
-			// Only add IP to fping list if monitor requires ping check
-			if mwd.Monitor.ShouldPing && !ipSet[mwd.Monitor.IPAddress] {
-				ips = append(ips, mwd.Monitor.IPAddress)
-				ipSet[mwd.Monitor.IPAddress] = true
+	for _, dwd := range sched.devices {
+		if dwd.Deadline.Before(now) || dwd.Deadline.Equal(now) {
+			candidates = append(candidates, dwd)
+			// Only add IP to fping list if device requires ping check
+			if dwd.Device.ShouldPing && !ipSet[dwd.Device.IPAddress] {
+				ips = append(ips, dwd.Device.IPAddress)
+				ipSet[dwd.Device.IPAddress] = true
 			}
 		}
 	}
 
-	slog.Debug("Identified candidate monitors", "component", "Scheduler", "monitor_count", len(candidates), "ip_count", len(ips))
+	slog.Debug("Identified candidate devices", "component", "Scheduler", "device_count", len(candidates), "ip_count", len(ips))
 
 	if len(candidates) == 0 {
 		slog.Debug("No candidates due for polling", "component", "Scheduler")
@@ -177,32 +177,32 @@ func (sched *Scheduler) schedule() {
 	reachableIPs := sched.performBatchFping(ips)
 	slog.Debug("Fping results", "component", "Scheduler", "reachable_count", len(reachableIPs), "total_ips", len(ips))
 
-	// 3. Filter qualified monitors and update deadlines
-	qualified := make([]*models.Monitor, 0)
-	for _, mwd := range candidates {
-		// Qualify if: (1) monitor doesn't need ping, OR (2) IP is reachable
-		isQualified := !mwd.Monitor.ShouldPing || reachableIPs[mwd.Monitor.IPAddress]
+	// 3. Filter qualified devices and update deadlines
+	qualified := make([]*models.Device, 0)
+	for _, dwd := range candidates {
+		// Qualify if: (1) device doesn't need ping, OR (2) IP is reachable
+		isQualified := !dwd.Device.ShouldPing || reachableIPs[dwd.Device.IPAddress]
 
 		if isQualified {
 			// Attach credential info before sending
-			mwd.Monitor.CredentialProfile = sched.credentials[mwd.Monitor.CredentialProfileID]
-			qualified = append(qualified, mwd.Monitor)
+			dwd.Device.CredentialProfile = sched.credentials[dwd.Device.CredentialProfileID]
+			qualified = append(qualified, dwd.Device)
 
 			// Update deadline: new_deadline = current_deadline + interval
-			newDeadline := mwd.Deadline.Add(time.Duration(mwd.Monitor.PollingIntervalSeconds) * time.Second)
-			mwd.Deadline = newDeadline
-			slog.Info("Monitor qualified", "component", "Scheduler", "monitor_id", mwd.Monitor.ID, "should_ping", mwd.Monitor.ShouldPing, "next_deadline", newDeadline.Format(time.RFC3339))
+			newDeadline := dwd.Deadline.Add(time.Duration(dwd.Device.PollingIntervalSeconds) * time.Second)
+			dwd.Deadline = newDeadline
+			slog.Info("Device qualified", "component", "Scheduler", "device_id", dwd.Device.ID, "should_ping", dwd.Device.ShouldPing, "next_deadline", newDeadline.Format(time.RFC3339))
 		} else {
-			slog.Debug("Monitor not reachable", "component", "Scheduler", "monitor_id", mwd.Monitor.ID, "ip", mwd.Monitor.IPAddress)
+			slog.Debug("Device not reachable", "component", "Scheduler", "device_id", dwd.Device.ID, "ip", dwd.Device.IPAddress)
 		}
 	}
 
 	// 4. Dispatch qualified list to OutputChan
 	if len(qualified) > 0 {
-		slog.Info("Dispatching qualified monitors", "component", "Scheduler", "count", len(qualified))
+		slog.Info("Dispatching qualified devices", "component", "Scheduler", "count", len(qualified))
 		sched.OutputChan <- qualified
 	} else {
-		slog.Debug("No monitors qualified", "component", "Scheduler")
+		slog.Debug("No devices qualified", "component", "Scheduler")
 	}
 }
 
@@ -238,7 +238,7 @@ func (sched *Scheduler) performBatchFping(ips []string) map[string]bool {
 	err := cmd.Run()
 	// fping returns non-zero if some hosts are unreachable, so we don't treat that as an error
 	if err != nil {
-		slog.Debug("fping exited with error (normal if some hosts down)", "component", "Scheduler", "error", err)
+		slog.Debug("fping exited with error (normal if some hosts down)", "component", "Scheduler", "error", err) // TODO fix logs
 	}
 
 	// Parse stdout for reachable IPs (one per line)

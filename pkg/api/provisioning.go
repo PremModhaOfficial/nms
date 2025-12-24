@@ -33,14 +33,13 @@ func RunDiscoveryHandler(eventChan chan<- models.Event) gin.HandlerFunc {
 	}
 }
 
-// ProvisionRequest represents the request body for device provisioning
+// ProvisionRequest represents the request body for device activation
 type ProvisionRequest struct {
-	PollingIntervalSeconds int   `json:"polling_interval_seconds"`
-	CredentialProfileID    int64 `json:"credential_profile_id" binding:"required"`
+	PollingIntervalSeconds int `json:"polling_interval_seconds" binding:"required,min=1"`
 }
 
-// ProvisionDeviceHandler publishes a command event to provision a device (zero repo deps)
-func ProvisionDeviceHandler(provisionCh chan<- models.Event) gin.HandlerFunc {
+// ActivateDeviceHandler publishes a command event to activate a discovered device (zero repo deps)
+func ActivateDeviceHandler(provisionCh chan<- models.Event) gin.HandlerFunc {
 	return func(context *gin.Context) {
 		id, err := strconv.ParseInt(context.Param("id"), 10, 64)
 		if err != nil {
@@ -55,24 +54,17 @@ func ProvisionDeviceHandler(provisionCh chan<- models.Event) gin.HandlerFunc {
 			return
 		}
 
-		// Default polling interval to 60 if not provided or invalid
-		if req.PollingIntervalSeconds <= 0 {
-			respondError(context, http.StatusBadRequest, "invalid poll interval")
-			return
-		}
-
 		// Publish command event
 		provisionCh <- models.Event{
-			Type: models.EventProvisionDevice,
-			Payload: &models.DeviceProvisionEvent{
+			Type: models.EventActivateDevice,
+			Payload: &models.DeviceActivateEvent{
 				DeviceID:               id,
-				CredentialProfileID:    req.CredentialProfileID,
 				PollingIntervalSeconds: req.PollingIntervalSeconds,
 			},
 		}
 
 		context.JSON(http.StatusAccepted, gin.H{
-			"message":   "monitor provisioning queued",
+			"message":   "device activation queued",
 			"device_id": id,
 		})
 	}

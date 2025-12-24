@@ -31,6 +31,13 @@ func RegisterMetricsRoute(g *gin.RouterGroup, reqCh chan<- models.Request) {
 	g.POST("/metrics", metricsHandler(reqCh))
 }
 
+// maskCredentialPayload hides sensitive payload data
+func maskCredentialPayload(cred *models.CredentialProfile) {
+	if cred != nil {
+		cred.Payload = []byte(`"[HIDDEN]"`)
+	}
+}
+
 // listHandler returns all entities
 func listHandler[T any](entityType string, encryptionKey string, reqCh chan<- models.Request) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -52,6 +59,10 @@ func listHandler[T any](entityType string, encryptionKey string, reqCh chan<- mo
 			decryptedItems := make([]*T, len(items))
 			for i, item := range items {
 				dec, _ := DecryptStruct(*item, encryptionKey)
+				// Mask credentials
+				if cred, ok := any(&dec).(*models.CredentialProfile); ok {
+					maskCredentialPayload(cred)
+				}
 				decryptedItems[i] = &dec
 			}
 			c.JSON(http.StatusOK, decryptedItems)
@@ -87,6 +98,10 @@ func getHandler[T any](entityType string, encryptionKey string, reqCh chan<- mod
 		// Decrypt result
 		if item, ok := resp.Data.(*T); ok {
 			dec, _ := DecryptStruct(*item, encryptionKey)
+			// Mask credentials
+			if cred, ok := any(&dec).(*models.CredentialProfile); ok {
+				maskCredentialPayload(cred)
+			}
 			c.JSON(http.StatusOK, &dec)
 			return
 		}
@@ -209,7 +224,7 @@ func deleteHandler(entityType string, reqCh chan<- models.Request) gin.HandlerFu
 
 // BatchMetricQuery represents a batch query for metrics
 type BatchMetricQuery struct {
-	MonitorIDs []int64 `json:"monitor_ids" binding:"required"`
+	DeviceIDs []int64 `json:"device_ids" binding:"required"`
 	models.MetricQuery
 }
 
@@ -222,8 +237,8 @@ func metricsHandler(reqCh chan<- models.Request) gin.HandlerFunc {
 			return
 		}
 
-		if len(req.MonitorIDs) == 0 {
-			respondError(c, http.StatusBadRequest, "monitor_ids is required")
+		if len(req.DeviceIDs) == 0 {
+			respondError(c, http.StatusBadRequest, "device_ids is required")
 			return
 		}
 
@@ -232,8 +247,8 @@ func metricsHandler(reqCh chan<- models.Request) gin.HandlerFunc {
 			Operation:  models.OpQuery,
 			EntityType: "Metric",
 			Payload: &persistence.MetricQueryRequest{
-				MonitorIDs: req.MonitorIDs,
-				Query:      req.MetricQuery,
+				DeviceIDs: req.DeviceIDs,
+				Query:     req.MetricQuery,
 			},
 			ReplyCh: replyCh,
 		}

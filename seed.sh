@@ -33,7 +33,7 @@ CRED_PAYLOAD=$(jq -n \
                   --arg proto "winrm" \
                   --arg user "$USER" \
                   --arg pass "$PASS" \
-                  '{name: $name, description: "Imported via curl", protocol: $proto, payload: ({"username":$user,"password":$pass} | tostring)}' \
+                  '{name: $name, protocol: $proto, payload: ({"username":$user,"password":$pass} | tostring)}' \
                 )
 
 CRED_RES=$(curl -s -X POST "$URL/credentials" -H "Content-Type: application/json" -d "$CRED_PAYLOAD")

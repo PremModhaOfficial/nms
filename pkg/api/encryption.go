@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"log/slog"
 	"nms/pkg/models"
 	"reflect"
 
@@ -143,6 +144,7 @@ func DecryptPayload(cred *models.CredentialProfile, secretKey string) (json.RawM
 
 	decrypted, err := DecryptStruct(*cred, secretKey)
 	if err != nil {
+		slog.Debug("Decryption failed, checking fallback", "credential_id", cred.ID, "error", err)
 		// Fallback: If it's already raw JSON (starts with {), use it as is
 		// This handles unencrypted data in the db during development/migration
 		if len(cred.Payload) > 0 && cred.Payload[0] == '{' {
@@ -151,5 +153,6 @@ func DecryptPayload(cred *models.CredentialProfile, secretKey string) (json.RawM
 		return nil, err
 	}
 
+	slog.Debug("Decryption successful", "credential_id", cred.ID)
 	return decrypted.Payload, nil
 }

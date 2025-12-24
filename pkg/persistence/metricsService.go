@@ -16,16 +16,20 @@ import (
 	"gorm.io/gorm"
 )
 
-// pathValidator ensures path only contains safe characters (alphanumeric, dots, underscores)
-var pathValidator = regexp.MustCompile(`^[a-zA-Z0-9_.]+$`)
+// pathValidator ensures path segments start with a letter and contain safe chars only.
+// Format: segment(.segment)* where segment is [a-zA-Z][a-zA-Z0-9_]{0,31}
+var pathValidator = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_]{0,31}(\.[a-zA-Z][a-zA-Z0-9_]{0,31})*$`)
 
 // validatePath checks if the JSONB path is safe to use in queries
 func validatePath(path string) error {
 	if path == "" {
 		return nil // Empty path returns full data
 	}
+	if len(path) > 128 {
+		return fmt.Errorf("invalid path: exceeds maximum length of 128 characters")
+	}
 	if !pathValidator.MatchString(path) {
-		return fmt.Errorf("invalid path: must contain only alphanumeric characters, dots, and underscores")
+		return fmt.Errorf("invalid path: must start with a letter and contain only alphanumeric characters, dots, and underscores")
 	}
 	return nil
 }
@@ -36,10 +40,10 @@ type MetricResult struct {
 	Value     json.RawMessage `json:"value"`
 }
 
-// BatchMetricResult groups results by monitor ID
+// BatchMetricResult groups results by device ID
 type BatchMetricResult struct {
-	MonitorID int64           `json:"monitor_id"`
-	Results   []*MetricResult `json:"results"`
+	DeviceID int64           `json:"device_id"`
+	Results  []*MetricResult `json:"results"`
 }
 
 // MetricsService handles all metrics-related database operations.
@@ -101,16 +105,16 @@ func (writer *MetricsService) savePollResults(ctx context.Context, results []plu
 	for _, result := range results {
 		if result.Success {
 			metric := models.Metric{
-				MonitorID: result.MonitorID,
-				Data:      result.Data,
+				DeviceID: result.DeviceID,
+				Data:     result.Data,
 			}
 			if err := writer.db.WithContext(ctx).Create(&metric).Error; err != nil {
-				slog.Error("Error saving metric", "component", "MetricsService", "monitor_id", result.MonitorID, "error", err)
+				slog.Error("Error saving metric", "component", "MetricsService", "device_id", result.DeviceID, "error", err)
 			} else {
-				slog.Debug("Saved metric", "component", "MetricsService", "monitor_id", result.MonitorID, "size_bytes", len(result.Data))
+				slog.Debug("Saved metric", "component", "MetricsService", "device_id", result.DeviceID, "size_bytes", len(result.Data))
 			}
 		} else {
-			slog.Warn("Poll result error", "component", "MetricsService", "target", result.Target, "port", result.Port, "error", result.Error)
+			slog.Error("Poll result error", "component", "MetricsService", "target", result.Target, "port", result.Port, "error", result.Error)
 		}
 	}
 }
@@ -126,7 +130,7 @@ func (writer *MetricsService) handleQuery(ctx context.Context, req models.Reques
 		return
 	}
 
-	results, err := writer.getMetricsBatch(ctx, query.MonitorIDs, query.Query)
+	results, err := writer.getMetricsBatch(ctx, query.DeviceIDs, query.Query)
 	if err != nil {
 		resp.Error = err
 	} else {
@@ -136,8 +140,8 @@ func (writer *MetricsService) handleQuery(ctx context.Context, req models.Reques
 	req.ReplyCh <- resp
 }
 
-// getMetricsBatch fetches metrics for multiple monitors using a prepared statement.
-func (writer *MetricsService) getMetricsBatch(ctx context.Context, monitorIDs []int64, query models.MetricQuery) ([]*BatchMetricResult, error) {
+// getMetricsBatch fetches metrics for multiple devices using a prepared statement.
+func (writer *MetricsService) getMetricsBatch(ctx context.Context, deviceIDs []int64, query models.MetricQuery) ([]*BatchMetricResult, error) {
 	limit := query.Limit
 	if limit <= 0 {
 		limit = writer.defaultLimit
@@ -166,7 +170,7 @@ func (writer *MetricsService) getMetricsBatch(ctx context.Context, monitorIDs []
 			timestamp, 
 			data #> '{%s}' as value 
 		FROM metrics 
-		WHERE monitor_id = $1 
+		WHERE device_id = $1 
 		  AND timestamp >= $2 AND timestamp <= $3 
 		ORDER BY timestamp DESC 
 		LIMIT $4`, pgPath)
@@ -177,13 +181,13 @@ func (writer *MetricsService) getMetricsBatch(ctx context.Context, monitorIDs []
 	}
 	defer stmt.Close()
 
-	// Build result for each monitor
-	results := make([]*BatchMetricResult, 0, len(monitorIDs))
+	// Build result for each device
+	results := make([]*BatchMetricResult, 0, len(deviceIDs))
 
-	for _, monitorID := range monitorIDs {
-		rows, err := stmt.QueryContext(ctx, monitorID, query.Start, query.End, limit)
+	for _, deviceID := range deviceIDs {
+		rows, err := stmt.QueryContext(ctx, deviceID, query.Start, query.End, limit)
 		if err != nil {
-			return nil, fmt.Errorf("query failed for monitor %d: %w", monitorID, err)
+			return nil, fmt.Errorf("query failed for device %d: %w", deviceID, err)
 		}
 
 		var metricResults []*MetricResult
@@ -202,8 +206,8 @@ func (writer *MetricsService) getMetricsBatch(ctx context.Context, monitorIDs []
 		}
 
 		results = append(results, &BatchMetricResult{
-			MonitorID: monitorID,
-			Results:   metricResults,
+			DeviceID: deviceID,
+			Results:  metricResults,
 		})
 	}
 
@@ -212,6 +216,6 @@ func (writer *MetricsService) getMetricsBatch(ctx context.Context, monitorIDs []
 
 // MetricQueryRequest holds parameters for a metrics query.
 type MetricQueryRequest struct {
-	MonitorIDs []int64
-	Query      models.MetricQuery
+	DeviceIDs []int64
+	Query     models.MetricQuery
 }

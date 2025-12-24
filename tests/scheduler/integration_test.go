@@ -39,14 +39,14 @@ func TestScheduler_Integration(t *testing.T) {
 	}
 
 	// 2. Initialize Scheduler
-	monEvents := make(chan models.Event, 10)
+	deviceEvents := make(chan models.Event, 10)
 	credEvents := make(chan models.Event, 10)
-	outChan := make(chan []*models.Monitor, 10)
+	outChan := make(chan []*models.Device, 10)
 	// Low tick interval for fast testing
-	s := scheduler.NewScheduler(monEvents, credEvents, outChan, mockPath, 1, 100, 1)
+	s := scheduler.NewScheduler(deviceEvents, credEvents, outChan, mockPath, 1, 100, 1)
 
 	// 3. Load initial data
-	monitors := []*models.Monitor{
+	devices := []*models.Device{
 		{ID: 1, IPAddress: "192.168.1.1", PollingIntervalSeconds: 1, PluginID: "icmp", Port: 0, ShouldPing: true}, // Reachable
 		{ID: 2, IPAddress: "192.168.1.5", PollingIntervalSeconds: 1, PluginID: "icmp", Port: 0, ShouldPing: true}, // Unreachable
 		{ID: 3, IPAddress: "10.0.0.10", PollingIntervalSeconds: 2, PluginID: "snmp", Port: 161, ShouldPing: true}, // Reachable
@@ -54,7 +54,7 @@ func TestScheduler_Integration(t *testing.T) {
 	creds := []*models.CredentialProfile{
 		{ID: 1, Name: "Cred1"},
 	}
-	s.LoadCache(monitors, creds)
+	s.LoadCache(devices, creds)
 
 	// 4. Run Scheduler
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -73,34 +73,34 @@ Loop:
 	for {
 		select {
 		case batch := <-outChan:
-			for _, m := range batch {
-				fmt.Printf("Integration Test: Received Monitor ID %d\n", m.ID)
-				receivedIDs[m.ID] = true
+			for _, d := range batch {
+				fmt.Printf("Integration Test: Received Device ID %d\n", d.ID)
+				receivedIDs[d.ID] = true
 			}
 			if len(receivedIDs) >= totalExpected {
 				break Loop
 			}
 		case <-timeout:
-			t.Errorf("timeout waiting for monitors. received: %v", receivedIDs)
+			t.Errorf("timeout waiting for devices. received: %v", receivedIDs)
 			break Loop
 		}
 	}
 
 	if !receivedIDs[1] {
-		t.Error("expected monitor ID 1 to be received")
+		t.Error("expected device ID 1 to be received")
 	}
 	if !receivedIDs[3] {
-		t.Error("expected monitor ID 3 to be received")
+		t.Error("expected device ID 3 to be received")
 	}
 	if receivedIDs[2] {
-		t.Error("did not expect monitor ID 2 to be received")
+		t.Error("did not expect device ID 2 to be received")
 	}
 
 	// 6. Test dynamic update via Event
-	newMon := &models.Monitor{ID: 4, IPAddress: "172.16.0.1", PollingIntervalSeconds: 1, PluginID: "icmp"}
-	monEvents <- models.Event{
+	newDev := &models.Device{ID: 4, IPAddress: "172.16.0.1", PollingIntervalSeconds: 1, PluginID: "icmp"}
+	deviceEvents <- models.Event{
 		Type:    models.EventCreate,
-		Payload: newMon,
+		Payload: newDev,
 	}
 
 	// Wait for ID 4
@@ -109,14 +109,14 @@ Loop2:
 	for {
 		select {
 		case batch := <-outChan:
-			for _, m := range batch {
-				if m.ID == 4 {
+			for _, d := range batch {
+				if d.ID == 4 {
 					receivedIDs[4] = true
 					break Loop2
 				}
 			}
 		case <-timeout:
-			t.Error("timeout waiting for dynamic monitor ID 4")
+			t.Error("timeout waiting for dynamic device ID 4")
 			break Loop2
 		}
 	}

@@ -7,7 +7,7 @@ import "encoding/json"
 
 // Task is the input sent to a plugin binary.
 type Task struct {
-	MonitorID   int64           `json:"monitor_id,omitempty"`  // Optional: for tracking results back to a monitor
+	DeviceID    int64           `json:"device_id,omitempty"`   // Optional: for tracking results back to a device
 	Target      string          `json:"target"`                // IP address or hostname
 	Port        int             `json:"port"`                  // Target port
 	Credentials json.RawMessage `json:"credentials,omitempty"` // Decrypted JSON payload (protocol-specific)
@@ -19,14 +19,14 @@ type Task struct {
 
 // Result is the output from a plugin binary.
 type Result struct {
-	MonitorID int64           `json:"monitor_id,omitempty"` // Echo back for correlation
-	Target    string          `json:"target"`
-	Port      int             `json:"port"`
-	Success   bool            `json:"success"`
-	Error     string          `json:"error,omitempty"`
-	Hostname  string          `json:"hostname,omitempty"` // Discovery mode
-	Metrics   []Metric        `json:"metrics,omitempty"`  // Polling mode (legacy/flattened)
-	Data      json.RawMessage `json:"data,omitempty"`     // Polling mode (hierarchical raw data)
+	DeviceID int64           `json:"device_id,omitempty"` // Echo back for correlation
+	Target   string          `json:"target"`
+	Port     int             `json:"port"`
+	Success  bool            `json:"success"`
+	Error    string          `json:"error,omitempty"`
+	Hostname string          `json:"hostname,omitempty"` // Discovery mode
+	Metrics  []Metric        `json:"metrics,omitempty"`  // Polling mode (legacy/flattened)
+	Data     json.RawMessage `json:"data,omitempty"`     // Polling mode (hierarchical raw data)
 
 	// Internal fields for provisioning context (set by discovery service)
 	DiscoveryProfileID  int64 `json:"-"`

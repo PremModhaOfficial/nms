@@ -18,7 +18,7 @@ import (
 
 // Input aligns with plugin.Task from pkg/plugin/types.go but adds compatibility for tests
 type Input struct {
-	MonitorID   int64           `json:"monitor_id,omitempty"`
+	DeviceID    int64           `json:"device_id,omitempty"`
 	RequestID   string          `json:"request_id,omitempty"` // For test compatibility
 	Target      string          `json:"target"`
 	Port        int             `json:"port"`
@@ -35,7 +35,7 @@ type WinRMCreds struct {
 
 // Output aligns with plugin.Result from pkg/plugin/types.go
 type Output struct {
-	MonitorID int64           `json:"monitor_id,omitempty"`
+	DeviceID  int64           `json:"device_id,omitempty"`
 	RequestID string          `json:"request_id,omitempty"` // Echo back for tests
 	Target    string          `json:"target"`
 	Port      int             `json:"port"`
@@ -97,7 +97,7 @@ func main() {
 
 func processTask(task Input) Output {
 	out := Output{
-		MonitorID: task.MonitorID,
+		DeviceID:  task.DeviceID,
 		RequestID: task.RequestID,
 		Target:    task.Target,
 		Port:      task.Port,

@@ -122,7 +122,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n    \"name\": \"Windows Admin\",\n    \"description\": \"Admin credentials for Windows servers\",\n    \"protocol\": \"winrm\",\n    \"payload\": \"{\\\"username\\\": \\\"admin\\\", \\\"password\\\": \\\"secret\\\"}\"\n}"
+              "raw": "{\n    \"name\": \"Windows Admin\",\n    \"protocol\": \"winrm\",\n    \"payload\": \"{\\\"username\\\": \\\"admin\\\", \\\"password\\\": \\\"secret\\\"}\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/v1/credentials",
@@ -149,7 +149,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n    \"name\": \"Windows Admin Updated\",\n    \"description\": \"Updated description\",\n    \"protocol\": \"winrm\",\n    \"payload\": \"{\\\"username\\\": \\\"newadmin\\\", \\\"password\\\": \\\"newsecret\\\"}\"\n}"
+              "raw": "{\n    \"name\": \"Windows Admin Updated\",\n    \"protocol\": \"winrm\",\n    \"payload\": \"{\\\"username\\\": \\\"newadmin\\\", \\\"password\\\": \\\"newsecret\\\"}\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/v1/credentials/1",
@@ -186,45 +186,45 @@
       ]
     },
     {
-      "name": "Monitors",
+      "name": "Devices",
       "item": [
         {
-          "name": "List Monitors",
+          "name": "List Devices",
           "request": {
             "method": "GET",
             "url": {
-              "raw": "{{base_url}}/api/v1/monitors",
+              "raw": "{{base_url}}/api/v1/devices",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "monitors"
+                "devices"
               ]
             }
           }
         },
         {
-          "name": "Get Monitor by ID",
+          "name": "Get Device by ID",
           "request": {
             "method": "GET",
             "url": {
-              "raw": "{{base_url}}/api/v1/monitors/1",
+              "raw": "{{base_url}}/api/v1/devices/1",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "monitors",
+                "devices",
                 "1"
               ]
             }
           }
         },
         {
-          "name": "Create Monitor",
+          "name": "Create Device",
           "request": {
             "method": "POST",
             "header": [
@@ -238,20 +238,20 @@
               "raw": "{\n    \"hostname\": \"server-01\",\n    \"ip_address\": \"192.168.1.10\",\n    \"plugin_id\": \"winrm\",\n    \"port\": 5985,\n    \"credential_profile_id\": 1,\n    \"discovery_profile_id\": 1,\n    \"polling_interval_seconds\": 60,\n    \"should_ping\": true\n}"
             },
             "url": {
-              "raw": "{{base_url}}/api/v1/monitors",
+              "raw": "{{base_url}}/api/v1/devices",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "monitors"
+                "devices"
               ]
             }
           }
         },
         {
-          "name": "Update Monitor",
+          "name": "Update Device",
           "request": {
             "method": "PUT",
             "header": [
@@ -265,32 +265,32 @@
               "raw": "{\n    \"hostname\": \"server-01-updated\",\n    \"ip_address\": \"192.168.1.10\",\n    \"plugin_id\": \"winrm\",\n    \"port\": 5985,\n    \"credential_profile_id\": 1,\n    \"discovery_profile_id\": 1,\n    \"polling_interval_seconds\": 120,\n    \"should_ping\": false\n}"
             },
             "url": {
-              "raw": "{{base_url}}/api/v1/monitors/1",
+              "raw": "{{base_url}}/api/v1/devices/1",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "monitors",
+                "devices",
                 "1"
               ]
             }
           }
         },
         {
-          "name": "Delete Monitor",
+          "name": "Delete Device",
           "request": {
             "method": "DELETE",
             "url": {
-              "raw": "{{base_url}}/api/v1/monitors/1",
+              "raw": "{{base_url}}/api/v1/devices/1",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "monitors",
+                "devices",
                 "1"
               ]
             }
@@ -431,45 +431,10 @@
       ]
     },
     {
-      "name": "Devices",
+      "name": "Activation",
       "item": [
         {
-          "name": "List Devices",
-          "request": {
-            "method": "GET",
-            "url": {
-              "raw": "{{base_url}}/api/v1/devices",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "devices"
-              ]
-            }
-          }
-        },
-        {
-          "name": "Get Device by ID",
-          "request": {
-            "method": "GET",
-            "url": {
-              "raw": "{{base_url}}/api/v1/devices/1",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "devices",
-                "1"
-              ]
-            }
-          }
-        },
-        {
-          "name": "Provision Device",
+          "name": "Activate Device",
           "request": {
             "method": "POST",
             "header": [
@@ -480,10 +445,10 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n    \"credential_profile_id\": 1,\n    \"polling_interval_seconds\": 60\n}"
+              "raw": "{\n    \"polling_interval_seconds\": 60\n}"
             },
             "url": {
-              "raw": "{{base_url}}/api/v1/devices/1/provision",
+              "raw": "{{base_url}}/api/v1/devices/1/activate",
               "host": [
                 "{{base_url}}"
               ],
@@ -492,7 +457,7 @@
                 "v1",
                 "devices",
                 "1",
-                "provision"
+                "activate"
               ]
             }
           }

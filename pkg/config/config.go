@@ -1,6 +1,8 @@
 package config
 
 import (
+	"errors"
+	"os/exec"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -25,24 +27,19 @@ type Config struct {
 	PluginsDir string `mapstructure:"PLUGINS_DIR"`
 
 	// Worker Configurations
-	FpingPath                  string `mapstructure:"FPING_PATH"`
-	PollingWorkerConcurrency   int    `mapstructure:"POLLING_WORKER_CONCURRENCY"`
-	DiscoveryWorkerConcurrency int    `mapstructure:"DISCOVERY_WORKER_CONCURRENCY"`
+	PollWorkerCount int `mapstructure:"POLL_WORKER_COUNT"`
+	DiscWorkerCount int `mapstructure:"DISC_WORKER_COUNT"`
 
 	// Scheduler Configurations
-	SchedulerTickIntervalSeconds int `mapstructure:"SCHEDULER_TICK_INTERVAL_SECONDS"`
-	FpingTimeoutMs               int `mapstructure:"FPING_TIMEOUT_MS"`
-	FpingRetryCount              int `mapstructure:"FPING_RETRY_COUNT"`
+	PollIntervalSec  int `mapstructure:"POLL_INTERVAL_SEC"`
+	AvCheckTimeoutMs int `mapstructure:"AV_CHECK_TIMEOUT_MS"`
+	AvCheckRetries   int `mapstructure:"AV_CHECK_RETRIES"`
 
 	// Security/Encryption Configurations
 	JWTSecret     string `mapstructure:"JWT_SECRET"`
-	EncryptionKey string `mapstructure:"NMS_SECRET"`
+	EncryptionKey string `mapstructure:"ENCRYPTION_KEY"`
 	AdminUser     string `mapstructure:"NMS_ADMIN_USER"`
 	AdminHash     string `mapstructure:"NMS_ADMIN_HASH"`
-
-	// Internal Queue Settings
-	InternalQueueSize int `mapstructure:"INTERNAL_QUEUE_SIZE"`
-	PollerBatchSize   int `mapstructure:"POLLER_BATCH_SIZE"`
 
 	// Authentication
 	SessionDurationHours int `mapstructure:"SESSION_DURATION_HOURS"`
@@ -63,22 +60,20 @@ func LoadConfig(path string) (*Config, error) {
 	v.SetDefault("DB_NAME", "nmslite")
 	v.SetDefault("DB_PORT", "5432")
 	v.SetDefault("PLUGINS_DIR", "plugins")
-	v.SetDefault("FPING_PATH", "/usr/bin/fping")
-	v.SetDefault("POLLING_WORKER_CONCURRENCY", 5)
-	v.SetDefault("DISCOVERY_WORKER_CONCURRENCY", 3)
-	v.SetDefault("SCHEDULER_TICK_INTERVAL_SECONDS", 5)
-	v.SetDefault("FPING_TIMEOUT_MS", 500)
-	v.SetDefault("FPING_RETRY_COUNT", 2)
+	v.SetDefault("POLL_WORKER_COUNT", 5)
+	v.SetDefault("DISC_WORKER_COUNT", 3)
+	v.SetDefault("POLL_INTERVAL_SEC", 5)
+	v.SetDefault("AV_CHECK_TIMEOUT_MS", 500)
+	v.SetDefault("AV_CHECK_RETRIES", 2)
 	v.SetDefault("JWT_SECRET", "default-insecure-secret-change-me")
-	v.SetDefault("NMS_SECRET", "1234567890123456789012345678901212345678901234567890123456789012")
+	v.SetDefault("ENCRYPTION_KEY", "1234567890123456789012345678901212345678901234567890123456789012")
 	v.SetDefault("NMS_ADMIN_USER", "admin")
 	v.SetDefault("NMS_ADMIN_HASH", "$2a$10$BST/uOdLLXUyqO4fN.b9cuwVwoXEJWWFzpc4iirHiu3GcgbuJqtdu")
-	v.SetDefault("INTERNAL_QUEUE_SIZE", 100)
-	v.SetDefault("POLLER_BATCH_SIZE", 10)
-	v.SetDefault("SESSION_DURATION_HOURS", 24)
-	v.SetDefault("METRICS_DEFAULT_LIMIT", 10)
+	v.SetDefault("SESSION_DURATION_HOURS", 168)
+	v.SetDefault("METRICS_DEFAULT_LIMIT", 100)
 	v.SetDefault("METRICS_DEFAULT_LOOKBACK_HOURS", 1)
 
+	// TODO keep single file
 	// 2. Read app.yaml if exists
 	v.AddConfigPath(path)
 	v.SetConfigName("app")
@@ -108,4 +103,25 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	return &config, nil
+}
+
+// ValidateSecrets ensures critical secrets are not using insecure defaults.
+// Call this in production to fail fast if secrets are not properly configured.
+func (c *Config) ValidateSecrets() error {
+	if c.JWTSecret == "default-insecure-secret-change-me" {
+		return errors.New("JWT_SECRET must be changed from default for production")
+	}
+	if c.EncryptionKey == "1234567890123456789012345678901212345678901234567890123456789012" {
+		return errors.New("ENCRYPTION_KEY must be changed from default for production")
+	}
+	return nil
+}
+
+// FindFpingPath attempts to find the fping binary in the system PATH.
+func FindFpingPath() (string, error) {
+	path, err := exec.LookPath("fping")
+	if err != nil {
+		return "", errors.New("fping utility not found. Please install it (e.g., 'sudo apt install fping' or 'brew install fping')")
+	}
+	return path, nil
 }

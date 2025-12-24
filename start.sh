@@ -36,7 +36,7 @@ mkdir -p bin
 echo -e "${YELLOW}[1/3] Compiling server and plugins...${NC}"
 go build -o bin/nms-app cmd/app/main.go
 mkdir -p plugins
-go build -o plugins/winrm plugin-code/winrm/main.go
+(cd plugin-code/winrm && go build -o ../../plugins/winrm main.go)
 echo -e "${GREEN}[✓] Compiled successfully${NC}"
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -63,7 +63,7 @@ fi
 export JWT_SECRET="${JWT_SECRET:-$(openssl rand -hex 32 2>/dev/null || echo 'dev-jwt-secret-change-in-production')}"
 
 # Encryption key for credentials
-export NMS_SECRET="${NMS_SECRET:-1234567890123456789012345678901212345678901234567890123456789012}"
+export ENCRYPTION_KEY="${ENCRYPTION_KEY:-1234567890123456789012345678901212345678901234567890123456789012}"
 
 echo -e "${GREEN}[✓] Environment configured${NC}"
 echo -e "${YELLOW}    Admin user: $NMS_ADMIN_USER${NC}"

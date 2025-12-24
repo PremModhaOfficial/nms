@@ -11,7 +11,8 @@ const (
 
 	// Command events for manual provisioning
 	EventTriggerDiscovery EventType = "trigger_discovery"
-	EventProvisionDevice  EventType = "provision_device"
+	EventProvisionDevice  EventType = "provision_device" // Deprecated: use EventActivateDevice
+	EventActivateDevice   EventType = "activate_device"
 	EventRunDiscovery     EventType = "run_discovery" // Explicitly run discovery regardless of AutoRun flag
 )
 
@@ -26,9 +27,8 @@ type DiscoveryTriggerEvent struct {
 	DiscoveryProfileID int64
 }
 
-// DeviceProvisionEvent represents a command to provision a device
-type DeviceProvisionEvent struct {
+// DeviceActivateEvent represents a command to activate a discovered device
+type DeviceActivateEvent struct {
 	DeviceID               int64
-	CredentialProfileID    int64
 	PollingIntervalSeconds int
 }

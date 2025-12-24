@@ -8,7 +8,7 @@ import (
 // Metric represents the metrics table storing raw poll results
 type Metric struct {
 	ID        int64           `gorm:"primaryKey;autoIncrement" json:"id"`
-	MonitorID int64           `gorm:"not null" json:"monitor_id"`
+	DeviceID  int64           `gorm:"not null" json:"device_id"`
 	Data      json.RawMessage `gorm:"type:jsonb;not null" json:"data"`
 	Timestamp time.Time       `gorm:"default:CURRENT_TIMESTAMP" json:"timestamp"`
 }
@@ -17,13 +17,12 @@ func (Metric) TableName() string { return "metrics" }
 
 // CredentialProfile represents the credential_profiles table
 type CredentialProfile struct {
-	ID          int64           `gorm:"primaryKey;autoIncrement" json:"id"`
-	Name        string          `gorm:"not null" json:"name" binding:"required"`
-	Description string          `json:"description"`
-	Protocol    string          `gorm:"not null" json:"protocol" binding:"required"`
-	Payload     json.RawMessage `gorm:"not null;type:text" json:"payload" binding:"required" gocrypt:"aes"` // Encrypted credential data
-	CreatedAt   time.Time       `gorm:"default:CURRENT_TIMESTAMP" json:"created_at"`
-	UpdatedAt   time.Time       `gorm:"default:CURRENT_TIMESTAMP" json:"updated_at"`
+	ID        int64           `gorm:"primaryKey;autoIncrement" json:"id"`
+	Name      string          `gorm:"not null" json:"name" binding:"required"`
+	Protocol  string          `gorm:"not null" json:"protocol" binding:"required"`
+	Payload   json.RawMessage `gorm:"not null;type:text" json:"payload" binding:"required" gocrypt:"aes"` // Encrypted credential data
+	CreatedAt time.Time       `gorm:"default:CURRENT_TIMESTAMP" json:"created_at"`
+	UpdatedAt time.Time       `gorm:"default:CURRENT_TIMESTAMP" json:"updated_at"`
 }
 
 // DiscoveryProfile represents the discovery_profiles table
@@ -42,19 +41,6 @@ type DiscoveryProfile struct {
 
 // Device represents the devices table
 type Device struct {
-	ID                 int64             `gorm:"primaryKey;autoIncrement" json:"id"`
-	DiscoveryProfileID int64             `gorm:"not null" json:"discovery_profile_id" binding:"required"`
-	DiscoveryProfile   *DiscoveryProfile `gorm:"foreignKey:DiscoveryProfileID" json:"discovery_profile,omitempty"`
-	Hostname           string            `json:"hostname"`
-	IPAddress          string            `gorm:"not null;type:inet" json:"ip_address" binding:"required,ip"`
-	Port               int               `gorm:"not null" json:"port" binding:"required"`
-	Status             string            `gorm:"default:'new'" json:"status"`
-	CreatedAt          time.Time         `gorm:"default:CURRENT_TIMESTAMP" json:"created_at"`
-	UpdatedAt          time.Time         `gorm:"default:CURRENT_TIMESTAMP" json:"updated_at"`
-}
-
-// Monitor represents the monitors table
-type Monitor struct {
 	ID                     int64              `gorm:"primaryKey;autoIncrement" json:"id"`
 	Hostname               string             `json:"hostname"`
 	IPAddress              string             `gorm:"not null;type:inet" json:"ip_address" binding:"required,ip"`
@@ -66,7 +52,7 @@ type Monitor struct {
 	DiscoveryProfile       *DiscoveryProfile  `gorm:"foreignKey:DiscoveryProfileID" json:"discovery_profile,omitempty"`
 	PollingIntervalSeconds int                `gorm:"default:60" json:"polling_interval_seconds" binding:"min=1"`
 	ShouldPing             bool               `gorm:"default:true" json:"should_ping"`
-	Status                 string             `gorm:"default:'active'" json:"status" binding:"oneof=active inactive error"`
+	Status                 string             `gorm:"default:'discovered'" json:"status" binding:"oneof=discovered active inactive error"`
 	CreatedAt              time.Time          `gorm:"default:CURRENT_TIMESTAMP" json:"created_at"`
 	UpdatedAt              time.Time          `gorm:"default:CURRENT_TIMESTAMP" json:"updated_at"`
 }
@@ -75,7 +61,6 @@ type Monitor struct {
 func (CredentialProfile) TableName() string { return "credential_profiles" }
 func (DiscoveryProfile) TableName() string  { return "discovery_profiles" }
 func (Device) TableName() string            { return "devices" }
-func (Monitor) TableName() string           { return "monitors" }
 
 // MetricQuery represents a request for metric data
 type MetricQuery struct {
@@ -89,4 +74,3 @@ type MetricQuery struct {
 func (c CredentialProfile) GetID() int64 { return c.ID }
 func (d DiscoveryProfile) GetID() int64  { return d.ID }
 func (d Device) GetID() int64            { return d.ID }
-func (m Monitor) GetID() int64           { return m.ID }

@@ -4,12 +4,13 @@ import (
 	"context"
 	"log/slog"
 	"net"
-	"nms/pkg/api"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
+
+	"nms/pkg/api"
 
 	"nms/pkg/models"
 	"nms/pkg/plugin"
@@ -123,11 +124,11 @@ func (discovery *DiscoveryService) collectResults(ctx context.Context) {
 
 				// Log and skip failures
 				if !res.Success {
-					slog.Warn("FAILED: Discovery attempt unsuccessful", "component", "DiscoveryService", "target", res.Target, "error", res.Error)
+					slog.Error("FAILED: Discovery attempt unsuccessful", "component", "DiscoveryService", "target", res.Target, "error", res.Error)
 					continue
 				}
 				if res.Hostname == "" {
-					slog.Warn("FAILED: No hostname returned", "component", "DiscoveryService", "target", res.Target)
+					slog.Error("FAILED: No hostname returned", "component", "DiscoveryService", "target", res.Target)
 					continue
 				}
 
@@ -154,7 +155,7 @@ func (discovery *DiscoveryService) runDiscovery(ctx context.Context, profile *mo
 		return
 	}
 	if len(ips) == 0 {
-		slog.Warn("No IPs found for target", "component", "DiscoveryService", "target", profile.Target)
+		slog.Error("No IPs found for target", "component", "DiscoveryService", "target", profile.Target)
 		return
 	}
 	slog.Info("Expanded target", "component", "DiscoveryService", "target", profile.Target, "ip_count", len(ips))
@@ -174,12 +175,19 @@ func (discovery *DiscoveryService) runDiscovery(ctx context.Context, profile *mo
 		protocol = credProfile.Protocol
 	}
 
+	if protocol == "" {
+		slog.Error("No protocol specified in credential profile", "component", "DiscoveryService", "profile_id", profile.CredentialProfileID)
+		return
+	}
+
 	// Try pluginDir/protocol (standalone) then pluginDir/protocol/protocol (nested)
 	binPath := filepath.Join(discovery.pluginDir, protocol)
-	if _, err := os.Stat(binPath); err != nil {
+	info, err := os.Stat(binPath)
+	if err != nil || info.IsDir() {
 		binPath = filepath.Join(discovery.pluginDir, protocol, protocol)
-		if _, err := os.Stat(binPath); err != nil {
-			slog.Error("Plugin not found for protocol", "component", "DiscoveryService", "protocol", protocol)
+		info, err = os.Stat(binPath)
+		if err != nil || info.IsDir() {
+			slog.Error("Plugin binary not found or is a directory", "component", "DiscoveryService", "protocol", protocol, "bin_path", binPath)
 			return
 		}
 	}

@@ -90,6 +90,8 @@ func (pool *Pool[T, R]) worker(ctx context.Context, id int, wg *sync.WaitGroup) 
 	}
 }
 
+//todo  rename worker to meaningfull name
+
 // executePlugin runs the plugin binary with the batch of tasks
 func (pool *Pool[T, R]) executePlugin(job Job[T]) []R {
 	slog.Debug("Executing plugin", "component", pool.poolName, "bin_path", job.BinPath, "task_count", len(job.Tasks))

@@ -13,7 +13,7 @@ const (
 // Request is a point-to-point message with reply channel for synchronous communication
 type Request struct {
 	Operation  string        // list, get, create, update, delete, query
-	EntityType string        // "Monitor", "CredentialProfile", "Device", "DiscoveryProfile", "Metric"
+	EntityType string        // "Device", "CredentialProfile", "DiscoveryProfile", "Metric"
 	ID         int64         // For get/update/delete
 	Payload    interface{}   // Entity or query params
 	ReplyCh    chan Response // Caller waits on this for synchronous reply
