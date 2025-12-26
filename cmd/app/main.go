@@ -17,8 +17,8 @@ import (
 	"nms/pkg/models"
 	"nms/pkg/persistence"
 	"nms/pkg/plugin"
-	"nms/pkg/poller"
-	"nms/pkg/scheduler"
+	"nms/pkg/polling"
+	"nms/pkg/scheduling"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -26,8 +26,8 @@ import (
 
 // services holds background workers that process events
 type services struct {
-	sched          *scheduler.Scheduler
-	poll           *poller.Poller
+	sched          *scheduling.Scheduler
+	poll           *polling.Poller
 	discService    *discovery.DiscoveryService
 	metricsService *persistence.MetricsService
 	entityService  *persistence.EntityService
@@ -172,7 +172,7 @@ func initServices(conf *config.Config, db *gorm.DB, fpingPath string) (*services
 	)
 
 	// Scheduler uses crudRequestChan to request devices from EntityService
-	sched := scheduler.NewScheduler(
+	sched := scheduling.NewScheduler(
 		deviceChan,
 		crudRequestChan,
 		schedulerToPollerChan,
@@ -183,7 +183,7 @@ func initServices(conf *config.Config, db *gorm.DB, fpingPath string) (*services
 	)
 
 	// Poller uses crudRequestChan to request credentials from EntityService
-	poll := poller.NewPoller(
+	poll := polling.NewPoller(
 		conf.PluginsDir,
 		conf.EncryptionKey,
 		conf.PollWorkerCount,
@@ -227,7 +227,7 @@ func initServices(conf *config.Config, db *gorm.DB, fpingPath string) (*services
 	return svc, channels
 }
 
-func loadInitialData(entityService *persistence.EntityService, sched *scheduler.Scheduler) {
+func loadInitialData(entityService *persistence.EntityService, sched *scheduling.Scheduler) {
 	// Load caches in EntityService
 	if err := entityService.LoadCaches(context.Background()); err != nil {
 		slog.Error("Failed to load EntityService caches", "error", err)

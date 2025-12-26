@@ -1,4 +1,4 @@
-package poller
+package polling
 
 import (
 	"context"
@@ -9,12 +9,12 @@ import (
 	"nms/pkg/api"
 	"nms/pkg/models"
 	"nms/pkg/plugin"
-	"nms/pkg/worker"
+	"nms/pkg/pluginWorker"
 )
 
 // Poller manages plugin execution for polling devices.
 type Poller struct {
-	pool          *worker.Pool[plugin.Task, plugin.Result]
+	pool          *pluginWorker.Pool[plugin.Task, plugin.Result]
 	pluginDir     string
 	plugins       map[string]string // pluginID -> binary path
 	encryptionKey string
@@ -39,7 +39,7 @@ func NewPoller(
 	inputChan <-chan []*models.Device,
 	outputChan chan<- []plugin.Result,
 ) *Poller {
-	pool := worker.NewPool[plugin.Task, plugin.Result](workerCount, "PollPool", bufferSize)
+	pool := pluginWorker.NewPool[plugin.Task, plugin.Result](workerCount, "PollPool", bufferSize)
 
 	p := &Poller{
 		pool:          pool,
@@ -90,7 +90,7 @@ func (poller *Poller) loadPlugins() {
 func (poller *Poller) Run(ctx context.Context) {
 	slog.Info("Starting main loop", "component", "Poller")
 
-	// Start the worker pool
+	// Start the pluginWorker pool
 	poller.pool.Start(ctx)
 
 	// Start result collector

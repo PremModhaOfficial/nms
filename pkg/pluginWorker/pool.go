@@ -1,4 +1,4 @@
-package worker
+package pluginWorker
 
 import (
 	"bytes"
@@ -9,7 +9,7 @@ import (
 	"sync"
 )
 
-// Pool is a generic worker pool that executes plugin binaries with batched tasks
+// Pool is a generic pluginWorker pool that executes plugin binaries with batched tasks
 type Pool[T any, R any] struct {
 	workerCount int
 	poolName    string   // For logging
@@ -25,7 +25,7 @@ type Job[T any] struct {
 	Tasks   []T
 }
 
-// NewPool creates a new generic worker pool
+// NewPool creates a new generic pluginWorker pool
 func NewPool[T any, R any](workerCount int, poolName string, bufferSize int, args ...string) *Pool[T, R] {
 	return &Pool[T, R]{
 		workerCount: workerCount,
@@ -36,9 +36,9 @@ func NewPool[T any, R any](workerCount int, poolName string, bufferSize int, arg
 	}
 }
 
-// Start begins the worker pool (call once at startup)
+// Start begins the pluginWorker pool (call once at startup)
 func (pool *Pool[T, R]) Start(ctx context.Context) {
-	slog.Info("Starting worker pool", "component", pool.poolName, "worker_count", pool.workerCount)
+	slog.Info("Starting pluginWorker pool", "component", pool.poolName, "worker_count", pool.workerCount)
 
 	var wg sync.WaitGroup
 	for i := 0; i < pool.workerCount; i++ {
@@ -90,7 +90,7 @@ func (pool *Pool[T, R]) worker(ctx context.Context, id int, wg *sync.WaitGroup) 
 	}
 }
 
-//todo  rename worker to meaningfull name
+//todo  rename pluginWorker to meaningful name
 
 // executePlugin runs the plugin binary with the batch of tasks
 func (pool *Pool[T, R]) executePlugin(job Job[T]) []R {

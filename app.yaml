@@ -18,45 +18,45 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # Database Configuration
 # ──────────────────────────────────────────────────────────────────────────────
-DB_HOST: localhost        # PostgreSQL host
-DB_PORT: "5432"           # PostgreSQL port (must be string)
-DB_NAME: nms              # Database name
-DB_USER: postgres         # Database username
+DB_HOST: localhost # PostgreSQL host
+DB_PORT: "5432" # PostgreSQL port (must be string)
+DB_NAME: nmslite # Database name
+DB_USER: nmslite # Database username
 # DB_PASSWORD: ...        # Set via DB_PASSWORD env var
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Server Configuration
 # ──────────────────────────────────────────────────────────────────────────────
-SERVER_ADDRESS: ":8080"   # HTTP listen address (host:port or :port)
+SERVER_ADDRESS: ":8080" # HTTP listen address (host:port or :port)
 
 # TLS/HTTPS (optional) - leave empty for HTTP mode
 # When both are set, server runs HTTPS on port 8443
-TLS_CERT_FILE: ""         # Path to TLS certificate file (PEM format)
-TLS_KEY_FILE: ""          # Path to TLS private key file (PEM format)
+TLS_CERT_FILE: "" # Path to TLS certificate file (PEM format)
+TLS_KEY_FILE: "" # Path to TLS private key file (PEM format)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Plugin Configuration
 # ──────────────────────────────────────────────────────────────────────────────
-PLUGINS_DIR: "plugins"    # Directory containing plugin executables
+PLUGINS_DIR: "plugins" # Directory containing plugin executables
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Worker Configuration
 # ──────────────────────────────────────────────────────────────────────────────
-POLL_WORKER_COUNT: 10     # Number of concurrent polling workers
-DISC_WORKER_COUNT: 5      # Number of concurrent discovery workers
+POLL_WORKER_COUNT: 10 # Number of concurrent polling workers
+DISC_WORKER_COUNT: 5 # Number of concurrent discovery workers
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Scheduler Configuration
 # ──────────────────────────────────────────────────────────────────────────────
-POLL_INTERVAL_SEC: 5      # Base polling interval in seconds
-AV_CHECK_TIMEOUT_MS: 500  # Availability check (fping) timeout in milliseconds
-AV_CHECK_RETRIES: 2       # Number of fping retries before marking unreachable
+POLL_INTERVAL_SEC: 5 # Base polling interval in seconds
+AV_CHECK_TIMEOUT_MS: 500 # Availability check (fping) timeout in milliseconds
+AV_CHECK_RETRIES: 2 # Number of fping retries before marking unreachable
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Authentication Configuration
 # ──────────────────────────────────────────────────────────────────────────────
-SESSION_DURATION_HOURS: 168   # JWT token validity (168h = 7 days)
-NMS_ADMIN_USER: admin         # Admin username for login
+SESSION_DURATION_HOURS: 168 # JWT token validity (168h = 7 days)
+NMS_ADMIN_USER: admin # Admin username for login
 # NMS_ADMIN_HASH: ...         # bcrypt hash of admin password (set via env var)
 #                             # Default: hash of "admin"
 #                             # Generate with: go run scripts/hashpassword.go <password>
@@ -73,5 +73,5 @@ NMS_ADMIN_USER: admin         # Admin username for login
 # ──────────────────────────────────────────────────────────────────────────────
 # Metrics Query Defaults
 # ──────────────────────────────────────────────────────────────────────────────
-METRICS_DEFAULT_LIMIT: 100            # Default max records returned by metrics API
-METRICS_DEFAULT_LOOKBACK_HOURS: 1     # Default time window for metrics queries
+METRICS_DEFAULT_LIMIT: 100 # Default max records returned by metrics API
+METRICS_DEFAULT_LOOKBACK_HOURS: 1 # Default time window for metrics queries

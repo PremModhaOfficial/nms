@@ -14,7 +14,7 @@ import (
 
 	"nms/pkg/models"
 	"nms/pkg/plugin"
-	"nms/pkg/worker"
+	"nms/pkg/pluginWorker"
 )
 
 // discoveryContext holds profile context for pending discoveries
@@ -27,7 +27,7 @@ type discoveryContext struct {
 // DiscoveryService coordinates the discovery process.
 // It listens for DiscoveryProfile events and manages the DiscoveryPool.
 type DiscoveryService struct {
-	pool          *worker.Pool[plugin.Task, plugin.Result]
+	pool          *pluginWorker.Pool[plugin.Task, plugin.Result]
 	events        <-chan models.Event  // Reads discovery profile events
 	resultCh      chan<- plugin.Result // Writes discovery results
 	pluginDir     string
@@ -47,7 +47,7 @@ func NewDiscoveryService(
 	workerCount int,
 	bufferSize int,
 ) *DiscoveryService {
-	pool := worker.NewPool[plugin.Task, plugin.Result](workerCount, "DiscoveryPool", bufferSize, "-discovery")
+	pool := pluginWorker.NewPool[plugin.Task, plugin.Result](workerCount, "DiscoveryPool", bufferSize, "-discovery")
 	return &DiscoveryService{
 		events:        events,
 		pool:          pool,
@@ -62,7 +62,7 @@ func NewDiscoveryService(
 func (discovery *DiscoveryService) Start(ctx context.Context) {
 	slog.Info("Starting discovery service", "component", "DiscoveryService")
 
-	// Start the worker pool
+	// Start the pluginWorker pool
 	discovery.pool.Start(ctx)
 
 	// Start result collector
@@ -105,7 +105,7 @@ func (discovery *DiscoveryService) processEvent(ctx context.Context, event model
 	}
 }
 
-// collectResults listens for results from the worker pool and forwards them.
+// collectResults listens for results from the pluginWorker pool and forwards them.
 func (discovery *DiscoveryService) collectResults(ctx context.Context) {
 	for {
 		select {

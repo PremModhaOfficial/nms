@@ -1,1 +1,3 @@
 plugins/winrm
+bin/nms-app
+bin/nms-server
