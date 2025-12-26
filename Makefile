@@ -1,4 +1,10 @@
-.PHONY: build run dev stop clean help
+.PHONY: build run dev stop clean help db-setup first-run
+
+# Load environment variables from .env file
+ifneq (,$(wildcard ./.env))
+    include .env
+    export
+endif
 
 # Default target
 all: help
@@ -20,6 +26,15 @@ run:
 ## seed: Populate the database using seed.py
 seed:
 	@python3 seed.py
+
+## db-setup: Initialize the database schema
+db-setup:
+	@echo "Initializing database schema..."
+	@psql -h $(DB_HOST) -p $(DB_PORT) -U $(DB_USER) -d $(DB_NAME) -f schema.sql
+	@echo "Database schema initialized."
+
+## first-run: Full setup and run for new environments
+first-run: stop db-setup build run
 
 ## dev: Fast development run (compiles and runs with default credentials)
 dev: stop build

@@ -43,17 +43,6 @@ func Connect(cfg *config.Config) (*gorm.DB, error) {
 		"max_life_mins", cfg.DBConnMaxLifeMins,
 	)
 
-	// Auto-migrate the schema
-	err = db.AutoMigrate(
-		&models.Metric{},
-		&models.CredentialProfile{},
-		&models.DiscoveryProfile{},
-		&models.Device{},
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to auto-migrate database: %w", err)
-	}
-
-	slog.Info("Connected to database and migrated schema", "component", "Database")
+	slog.Info("Connected to database", "component", "Database")
 	return db, nil
 }
