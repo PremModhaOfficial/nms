@@ -1,9 +1,3 @@
-# NMS Code Mirror Map
-
-Declarative map of the NMS codebase functions and their technical roles.
-
----
-
 # main - cmd/server/main.go
 
 ## main
@@ -72,22 +66,29 @@ Declarative map of the NMS codebase functions and their technical roles.
 
 # persistence - pkg/persistence/
 
-## NewEntityService (entityService.go)
+## EntityService (entityService.go)
 - Orchestrates complex entity persistence, discovery provisioning, and event publishing.
+- Maintains in-memory caches of active devices and credentials for hot-path access.
+
+## NewEntityService (entityService.go)
+- Initializes the service with necessary channels and DB connection.
 
 ## Run (entityService.go)
 - Main loop consuming `discoveryResults`, `events`, and `requests`.
 
 ## provisionFromDiscovery (entityService.go)
-- Atomically creates `Device` and `Monitor` from discovery plugin output.
+- Atomically creates `Device` from discovery plugin output.
 - Publishes events for scheduler synchronization.
 
 ## handleCrudRequest (entityService.go)
 - Central router for CRUD operations across multiple entity types.
 - Publishes change events to specific topics after successful DB commits.
 
-## NewMetricsService (metricsService.go)
+## MetricsService (metricsService.go)
 - Hot-path service for persisting high-volume polling data and handling metric queries.
+
+## NewMetricsService (metricsService.go)
+- Initializes the metrics service with raw SQL connection and default query limits.
 
 ## savePollResults (metricsService.go)
 - Batches `plugin.Result` items for DB insertion.
@@ -98,6 +99,10 @@ Declarative map of the NMS codebase functions and their technical roles.
 ---
 
 # discovery - pkg/discovery/
+
+## DiscoveryService (discoveryService.go)
+- Coordinates the discovery process across network ranges.
+- Manages its own internal worker pool for parallel scanning.
 
 ## Start (discoveryService.go)
 - Initializes discovery worker pool and result collector.
@@ -114,9 +119,13 @@ Declarative map of the NMS codebase functions and their technical roles.
 
 # poller - pkg/poller/
 
+## Poller (poller.go)
+- Manages the execution of protocol-specific plugins for metrics collection.
+- Groups tasks by protocol to optimize worker pool utilization.
+
 ## Run (poller.go)
-- Consumes batches of `*models.Monitor` from the scheduler.
-- Groups monitors by `PluginID` for batched execution.
+- Consumes batches of `*models.Device` from the scheduler.
+- Groups devices by `PluginID` for batched execution.
 - Decrypts credentials and submits tasks to `PollPool`.
 
 ## collectResults (poller.go)
@@ -126,23 +135,31 @@ Declarative map of the NMS codebase functions and their technical roles.
 
 # scheduler - pkg/scheduler/
 
+## Scheduler (scheduler.go)
+- Manages the polling schedule using a min-heap priority queue (deadlines).
+- Decouples scheduling logic from network reachability via `fping` batches.
+
 ## LoadCache (scheduler.go)
-- Hydrates in-memory map of monitors with calculated deadlines.
+- Hydrates in-memory map of devices with calculated deadlines.
 
 ## Run (scheduler.go)
-- Ticks every interval to identify due monitors.
-- Processes `monitorChan` and `credentialChan` events to maintain cache consistency.
+- Ticks every interval to identify due devices.
+- Processes `deviceChan` and `credentialChan` events to maintain cache consistency.
 
 ## schedule (scheduler.go)
-- Identifies due monitors and performs batch `fping` reachability check.
+- Identifies due devices and performs batch `fping` reachability check.
 - Updates deadlines based on `PollingIntervalSeconds`.
 
 ---
 
 # worker - pkg/worker/
 
-## NewPool (pool.go)
+## Pool (pool.go)
 - Generic worker pool implementation for external binary execution.
+- Handles stdin/stdout JSON marshalling for plugin communication.
+
+## NewPool (pool.go)
+- Creates a new pool with fixed worker count and named identifying tag.
 
 ## Start (pool.go)
 - Spawns fixed number of worker goroutines.
@@ -156,12 +173,34 @@ Declarative map of the NMS codebase functions and their technical roles.
 
 # config - pkg/config/
 
+## Config (config.go)
+- Central structure for application configuration.
+- Mapped from `app.yaml` and environment variables via Viper tags.
+
 ## LoadConfig (config.go)
 - Reads `app.yaml` and environment variables via `viper`.
 
 ---
 
 # models - pkg/models/
+
+## Device (models.go)
+- Core entity representing a monitored node (IP, Port, Plugin, Credentials).
+
+## CredentialProfile (models.go)
+- Encrypted storage for protocol-specific credentials (SNMP, WinRM, etc).
+
+## DiscoveryProfile (models.go)
+- Definition for network scanning (CIDR/Range, Port, Protocol).
+
+## Metric (models.go)
+- Database schema for raw JSONB metric storage.
+
+## Event (event.go)
+- Wrapper for internal system messages (Create/Update/Delete/Trigger).
+
+## Request / Response (request.go)
+- Pair for synchronous request-reply communication across channels.
 
 ## TableName (models.go)
 - Explicit GORM table name overrides for all domain entities.
@@ -173,5 +212,8 @@ Declarative map of the NMS codebase functions and their technical roles.
 
 # plugin - pkg/plugin/
 
-## Task / Result (types.go)
-- Defines the JSON contract for all external plugins.
+## Task (types.go)
+- JSON contract for data sent TO a plugin (Target, Port, Credentials).
+
+## Result (types.go)
+- JSON contract for data returned FROM a plugin (Metrics, Success/Error).

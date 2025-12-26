@@ -63,7 +63,8 @@ func main() {
 
 	services, channels := initServices(conf, db, fpingPath)
 
-	loadInitialData(db, services.sched)
+	// Load caches in EntityService and initialize Scheduler queue
+	loadInitialData(services.entityService, services.sched)
 
 	// Create context that cancels on SIGINT or SIGTERM
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -158,9 +159,22 @@ func initServices(conf *config.Config, db *gorm.DB, fpingPath string) (*services
 	// ══════════════════════════════════════════════════════════════
 	// SERVICES
 	// ══════════════════════════════════════════════════════════════
-	sched := scheduler.NewScheduler(
+
+	// EntityService needs to be created first as Scheduler and Poller depend on crudRequestChan
+	entityService := persistence.NewEntityService(
+		discResultChan,
+		provisioningEventChan,
+		crudRequestChan,
+		db,
+		discProfileChan,
 		deviceChan,
 		credentialChan,
+	)
+
+	// Scheduler uses crudRequestChan to request devices from EntityService
+	sched := scheduler.NewScheduler(
+		deviceChan,
+		crudRequestChan,
 		schedulerToPollerChan,
 		fpingPath,
 		conf.PollIntervalSec,
@@ -168,22 +182,15 @@ func initServices(conf *config.Config, db *gorm.DB, fpingPath string) (*services
 		conf.AvCheckRetries,
 	)
 
+	// Poller uses crudRequestChan to request credentials from EntityService
 	poll := poller.NewPoller(
 		conf.PluginsDir,
 		conf.EncryptionKey,
 		conf.PollWorkerCount,
 		DataBufferSize,
+		crudRequestChan,
 		schedulerToPollerChan,
 		pollResultChan,
-	)
-
-	discService := discovery.NewDiscoveryService(
-		discProfileChan,
-		discResultChan,
-		conf.PluginsDir,
-		conf.EncryptionKey,
-		conf.DiscWorkerCount,
-		EventBufferSize,
 	)
 
 	metricsService := persistence.NewMetricsService(
@@ -194,14 +201,13 @@ func initServices(conf *config.Config, db *gorm.DB, fpingPath string) (*services
 		conf.MetricsDefaultLookbackHours,
 	)
 
-	entityService := persistence.NewEntityService(
-		discResultChan,
-		provisioningEventChan,
-		crudRequestChan,
-		db,
+	discService := discovery.NewDiscoveryService(
 		discProfileChan,
-		deviceChan,
-		credentialChan,
+		discResultChan,
+		conf.PluginsDir,
+		conf.EncryptionKey,
+		conf.DiscWorkerCount,
+		EventBufferSize,
 	)
 
 	svc := &services{
@@ -221,17 +227,17 @@ func initServices(conf *config.Config, db *gorm.DB, fpingPath string) (*services
 	return svc, channels
 }
 
-func loadInitialData(db *gorm.DB, sched *scheduler.Scheduler) {
-	var initialDevices []*models.Device
-	if err := db.Find(&initialDevices).Error; err != nil {
-		slog.Error("Failed to list devices for scheduler", "error", err)
+func loadInitialData(entityService *persistence.EntityService, sched *scheduler.Scheduler) {
+	// Load caches in EntityService
+	if err := entityService.LoadCaches(context.Background()); err != nil {
+		slog.Error("Failed to load EntityService caches", "error", err)
+		os.Exit(1)
 	}
-	var initialCreds []*models.CredentialProfile
-	if err := db.Find(&initialCreds).Error; err != nil {
-		slog.Error("Failed to list credentials for scheduler", "error", err)
-	}
-	sched.LoadCache(initialDevices, initialCreds)
-	slog.Info("Scheduler cache loaded from database")
+
+	// Initialize Scheduler queue with active device IDs from EntityService
+	deviceIDs := entityService.GetActiveDeviceIDs()
+	sched.InitQueue(deviceIDs)
+	slog.Info("Scheduler queue initialized", "device_count", len(deviceIDs))
 }
 
 func startServices(ctx context.Context, svc *services) {

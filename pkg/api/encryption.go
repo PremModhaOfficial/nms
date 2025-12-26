@@ -137,6 +137,8 @@ func handleRawMessageFields(entity interface{}, secretKey string, encrypt bool) 
 
 // DecryptPayload decrypts a CredentialProfile and returns the raw payload.
 // The payload format is protocol-specific; plugins parse it themselves.
+// DecryptPayload decrypts a CredentialProfile and returns the raw payload as json.RawMessage.
+// The payload format is protocol-specific; plugins parse it themselves.
 func DecryptPayload(cred *models.CredentialProfile, secretKey string) (json.RawMessage, error) {
 	if cred == nil {
 		return nil, nil
@@ -148,11 +150,11 @@ func DecryptPayload(cred *models.CredentialProfile, secretKey string) (json.RawM
 		// Fallback: If it's already raw JSON (starts with {), use it as is
 		// This handles unencrypted data in the db during development/migration
 		if len(cred.Payload) > 0 && cred.Payload[0] == '{' {
-			return cred.Payload, nil
+			return json.RawMessage(cred.Payload), nil
 		}
 		return nil, err
 	}
 
 	slog.Debug("Decryption successful", "credential_id", cred.ID)
-	return decrypted.Payload, nil
+	return json.RawMessage(decrypted.Payload), nil
 }

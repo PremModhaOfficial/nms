@@ -34,7 +34,7 @@ func RegisterMetricsRoute(g *gin.RouterGroup, reqCh chan<- models.Request) {
 // maskCredentialPayload hides sensitive payload data
 func maskCredentialPayload(cred *models.CredentialProfile) {
 	if cred != nil {
-		cred.Payload = []byte(`"[HIDDEN]"`)
+		cred.Payload = "[HIDDEN]"
 	}
 }
 

@@ -17,12 +17,12 @@ func (Metric) TableName() string { return "metrics" }
 
 // CredentialProfile represents the credential_profiles table
 type CredentialProfile struct {
-	ID        int64           `gorm:"primaryKey;autoIncrement" json:"id"`
-	Name      string          `gorm:"not null" json:"name" binding:"required"`
-	Protocol  string          `gorm:"not null" json:"protocol" binding:"required"`
-	Payload   json.RawMessage `gorm:"not null;type:text" json:"payload" binding:"required" gocrypt:"aes"` // Encrypted credential data
-	CreatedAt time.Time       `gorm:"default:CURRENT_TIMESTAMP" json:"created_at"`
-	UpdatedAt time.Time       `gorm:"default:CURRENT_TIMESTAMP" json:"updated_at"`
+	ID        int64     `gorm:"primaryKey;autoIncrement" json:"id"`
+	Name      string    `gorm:"not null" json:"name" binding:"required"`
+	Protocol  string    `gorm:"not null" json:"protocol" binding:"required"`
+	Payload   string    `gorm:"not null;type:text" json:"payload" binding:"required" gocrypt:"aes"` // Encrypted credential data
+	CreatedAt time.Time `gorm:"default:CURRENT_TIMESTAMP" json:"created_at"`
+	UpdatedAt time.Time `gorm:"default:CURRENT_TIMESTAMP" json:"updated_at"`
 }
 
 // DiscoveryProfile represents the discovery_profiles table

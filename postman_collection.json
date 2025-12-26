@@ -479,18 +479,17 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n    \"path\": \"cpu.total\",\n    \"limit\": 10\n}"
+              "raw": "{\n    \"device_ids\": [1],\n    \"path\": \"cpu.total\",\n    \"limit\": 10\n}"
             },
             "url": {
-              "raw": "{{base_url}}/api/v1/metrics/1",
+              "raw": "{{base_url}}/api/v1/metrics",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "metrics",
-                "1"
+                "metrics"
               ]
             }
           }

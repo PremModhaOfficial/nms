@@ -47,6 +47,11 @@ type Config struct {
 	// Metrics Query Defaults
 	MetricsDefaultLimit         int `mapstructure:"METRICS_DEFAULT_LIMIT"`
 	MetricsDefaultLookbackHours int `mapstructure:"METRICS_DEFAULT_LOOKBACK_HOURS"`
+
+	// Connection Pool Settings
+	DBMaxOpenConns    int `mapstructure:"DB_MAX_OPEN_CONNS"`
+	DBMaxIdleConns    int `mapstructure:"DB_MAX_IDLE_CONNS"`
+	DBConnMaxLifeMins int `mapstructure:"DB_CONN_MAX_LIFE_MINS"`
 }
 
 // LoadConfig reads configuration from file or environment variables.
@@ -72,9 +77,11 @@ func LoadConfig(path string) (*Config, error) {
 	v.SetDefault("SESSION_DURATION_HOURS", 168)
 	v.SetDefault("METRICS_DEFAULT_LIMIT", 100)
 	v.SetDefault("METRICS_DEFAULT_LOOKBACK_HOURS", 1)
+	v.SetDefault("DB_MAX_OPEN_CONNS", 25)
+	v.SetDefault("DB_MAX_IDLE_CONNS", 10)
+	v.SetDefault("DB_CONN_MAX_LIFE_MINS", 30)
 
-	// TODO keep single file
-	// 2. Read app.yaml if exists
+	// 2. Read app.yaml for non-sensitive configuration
 	v.AddConfigPath(path)
 	v.SetConfigName("app")
 	v.SetConfigType("yaml")
@@ -84,16 +91,9 @@ func LoadConfig(path string) (*Config, error) {
 		}
 	}
 
-	// 3. Read .env if exists (overriding app.yaml)
-	v.SetConfigName(".env")
-	v.SetConfigType("env")
-	if err := v.MergeInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-			// Ignore if .env is missing or "app.env" is missing
-		}
-	}
-
-	// 4. Allow Viper to read Environment Variables (highest priority)
+	// 3. Environment variables have highest priority
+	// SECURITY: Secrets (JWT_SECRET, ENCRYPTION_KEY, DB_PASSWORD, NMS_ADMIN_HASH)
+	// should ONLY be set via environment variables, never in config files.
 	v.AutomaticEnv()
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 

@@ -3,10 +3,10 @@ package poller
 import (
 	"context"
 	"log/slog"
-	"nms/pkg/api"
 	"os"
 	"path/filepath"
 
+	"nms/pkg/api"
 	"nms/pkg/models"
 	"nms/pkg/plugin"
 	"nms/pkg/worker"
@@ -19,6 +19,9 @@ type Poller struct {
 	plugins       map[string]string // pluginID -> binary path
 	encryptionKey string
 
+	// Request channel to EntityService for credential lookups
+	entityReqChan chan<- models.Request
+
 	// Input channel: receives batches of devices from scheduler
 	InputChan <-chan []*models.Device
 
@@ -27,7 +30,15 @@ type Poller struct {
 }
 
 // NewPoller creates a new Poller instance.
-func NewPoller(pluginDir string, encryptionKey string, workerCount int, bufferSize int, inputChan <-chan []*models.Device, outputChan chan<- []plugin.Result) *Poller {
+func NewPoller(
+	pluginDir string,
+	encryptionKey string,
+	workerCount int,
+	bufferSize int,
+	entityReqChan chan<- models.Request,
+	inputChan <-chan []*models.Device,
+	outputChan chan<- []plugin.Result,
+) *Poller {
 	pool := worker.NewPool[plugin.Task, plugin.Result](workerCount, "PollPool", bufferSize)
 
 	p := &Poller{
@@ -35,6 +46,7 @@ func NewPoller(pluginDir string, encryptionKey string, workerCount int, bufferSi
 		pluginDir:     pluginDir,
 		plugins:       make(map[string]string),
 		encryptionKey: encryptionKey,
+		entityReqChan: entityReqChan,
 		InputChan:     inputChan,
 		OutputChan:    outputChan,
 	}
@@ -120,12 +132,46 @@ func (poller *Poller) groupByProtocol(devices []*models.Device) map[string][]*mo
 	return grouped
 }
 
-// createTasks converts devices to plugin.Task
+// getCredential fetches a credential from EntityService cache.
+func (poller *Poller) getCredential(profileID int64) *models.CredentialProfile {
+	replyCh := make(chan models.Response, 1)
+	poller.entityReqChan <- models.Request{
+		Operation: models.OpGetCredential,
+		ID:        profileID,
+		ReplyCh:   replyCh,
+	}
+
+	resp := <-replyCh
+	if resp.Error != nil {
+		slog.Error("Failed to get credential", "component", "Poller", "profile_id", profileID, "error", resp.Error)
+		return nil
+	}
+
+	cred, ok := resp.Data.(*models.CredentialProfile)
+	if !ok {
+		slog.Error("Invalid credential response type", "component", "Poller", "profile_id", profileID)
+		return nil
+	}
+	return cred
+}
+
+// createTasks converts devices to plugin.Task, fetching credentials from EntityService.
 func (poller *Poller) createTasks(devices []*models.Device) []plugin.Task {
 	tasks := make([]plugin.Task, 0, len(devices))
+
+	// Cache credentials by profile ID to avoid duplicate requests
+	credCache := make(map[int64]*models.CredentialProfile)
+
 	for _, d := range devices {
+		// Get credential from cache or fetch from EntityService
+		cred, exists := credCache[d.CredentialProfileID]
+		if !exists {
+			cred = poller.getCredential(d.CredentialProfileID)
+			credCache[d.CredentialProfileID] = cred
+		}
+
 		// Decrypt credentials payload
-		payload, err := api.DecryptPayload(d.CredentialProfile, poller.encryptionKey)
+		payload, err := api.DecryptPayload(cred, poller.encryptionKey)
 		if err != nil {
 			slog.Error("Failed to decrypt credentials", "component", "Poller", "device_id", d.ID, "error", err)
 			payload = nil // Plugin will handle missing credentials

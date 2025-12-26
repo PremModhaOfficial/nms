@@ -3,7 +3,10 @@ package database
 import (
 	"fmt"
 	"log/slog"
+	"time"
+
 	"nms/pkg/config"
+	"nms/pkg/models"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -24,6 +27,33 @@ func Connect(cfg *config.Config) (*gorm.DB, error) {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
-	slog.Info("Connected to database", "component", "Database")
+	// Configure connection pool
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get underlying sql.DB: %w", err)
+	}
+	sqlDB.SetMaxOpenConns(cfg.DBMaxOpenConns)
+	sqlDB.SetMaxIdleConns(cfg.DBMaxIdleConns)
+	sqlDB.SetConnMaxLifetime(time.Duration(cfg.DBConnMaxLifeMins) * time.Minute)
+
+	slog.Info("Configured connection pool",
+		"component", "Database",
+		"max_open", cfg.DBMaxOpenConns,
+		"max_idle", cfg.DBMaxIdleConns,
+		"max_life_mins", cfg.DBConnMaxLifeMins,
+	)
+
+	// Auto-migrate the schema
+	err = db.AutoMigrate(
+		&models.Metric{},
+		&models.CredentialProfile{},
+		&models.DiscoveryProfile{},
+		&models.Device{},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to auto-migrate database: %w", err)
+	}
+
+	slog.Info("Connected to database and migrated schema", "component", "Database")
 	return db, nil
 }

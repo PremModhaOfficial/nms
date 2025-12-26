@@ -110,15 +110,16 @@ graph LR
 
 ```
 pkg/
-├── api/              # HTTP handlers (thin, stateless)
-├── database/         # Repository interfaces, DB connection
+├── api/              # HTTP handlers, generic routes, auth middleware
+├── config/           # Configuration loading and validation
+├── database/         # Repository interfaces, GORM implementation, encryption
 ├── discovery/        # Device discovery orchestration
-├── models/           # Domain entities & events
-├── persistence/      # Central persistence services (Entity/Metrics)
-├── plugin/           # Plugin contract types
+├── models/           # Domain entities, events, and request/reply types
+├── persistence/      # Central services (EntityService, MetricsService)
+├── plugin/           # Plugin contract (Task, Result)
 ├── poller/           # Polling orchestration
 ├── scheduler/        # Timer-based poll scheduling
-└── worker/           # Generic worker pool
+└── worker/           # Generic worker pool for plugin execution
 ```
 
 ---
@@ -137,14 +138,14 @@ sequenceDiagram
     participant ES as EntityService
     participant DB as PostgreSQL
 
-    Client->>API: POST /api/v1/monitors
+    Client->>API: POST /api/v1/devices
     API->>API: Validate & encrypt
-    API->>CH: Request{Op: create, Payload: monitor, ReplyCh}
+    API->>CH: Request{Op: create, Payload: device, ReplyCh}
     CH->>ES: Deliver Request
     activate ES
-    ES->>DB: INSERT INTO monitors
+    ES->>DB: INSERT INTO devices
     DB-->>ES: OK
-    ES-->>API: Response{Data: monitor} via ReplyCh
+    ES-->>API: Response{Data: device} via ReplyCh
     deactivate ES
     API-->>Client: 201 Created
 ```
@@ -167,7 +168,7 @@ sequenceDiagram
     participant MS as MetricsService
     participant DB as PostgreSQL
 
-    SCH->>SCH: Check monitor deadlines
+    SCH->>SCH: Check device deadlines
     SCH->>FPING: Batch ping IPs
     FPING-->>SCH: Reachable IPs
     SCH->>POL: []*Device via schedulerToPollerChan
@@ -210,7 +211,7 @@ sequenceDiagram
     POOL->>DISC: []plugin.Result
     DISC->>ES: plugin.Result via discResultChan
     activate ES
-    ES->>DB: INSERT device + monitor
+    ES->>DB: INSERT device
     deactivate ES
 ```
 
@@ -218,14 +219,14 @@ sequenceDiagram
 
 ## Event Flow
 
-The system uses a **topic-based channel architecture**. Each channel represents a specific event topic.
+The system uses a **topic-based channel architecture**. Each channel represents a specific event topic. All channels are initialized in [main.go](file:///home/prem-modha/projects/nms/cmd/app/main.go).
 
 ### Channel Topology
 
 ```mermaid
 graph TD
     subgraph "Event Channels (models.Event)"
-        MC[monitorChan]
+        DC[deviceChan]
         CC[credentialChan]
         DPC[discProfileChan]
         PROV[provisioningEventChan]
@@ -246,11 +247,11 @@ graph TD
     API --> METRIC
     API --> PROV
 
-    ES --> MC
+    ES --> DC
     ES --> CC
     ES --> DPC
 
-    MC --> SCH
+    DC --> SCH
     CC --> SCH
     DPC --> DISC
 
@@ -267,18 +268,18 @@ graph TD
 
 | Event Type | Channel | Producer | Consumer | Purpose |
 |------------|---------|----------|----------|---------|
-| `create/update/delete` | monitorChan | EntityService | Scheduler | Update in-memory cache |
+| `create/update/delete` | deviceChan | EntityService | Scheduler | Update in-memory cache |
 | `create/update/delete` | credentialChan | EntityService | Scheduler | Update credential cache |
 | `create/update/delete` | discProfileChan | EntityService | DiscoveryService | Trigger discovery runs |
 | `trigger_discovery` | provisioningEventChan | API | EntityService | Manual discovery trigger |
-| `provision_device` | provisioningEventChan | API | EntityService | Manual device provisioning |
+| `activate_device` | provisioningEventChan | API | EntityService | Manual device activation |
 | `[]plugin.Result` | pollResultChan | Poller | MetricsService | Persist metrics |
 | `plugin.Result` | discResultChan | DiscoveryService | EntityService | Provision from discovery |
 | `[]*models.Device` | schedulerToPollerChan | Scheduler | Poller | Dispatch poll tasks |
 
 ### Event Publishing Pattern
 
-Events are published **after successful DB operations** using a non-blocking send:
+Events are published **after successful DB operations** in `EntityService` using a non-blocking send:
 
 ```go
 func sendEvent(ch chan<- models.Event, event models.Event) {
@@ -381,26 +382,40 @@ graph LR
 [{"target": "192.168.1.10", "success": true, "data": {...}}]
 ```
 
-### 4. Scheduler Cache Pattern
+### 4. EntityService Cache + Scheduler Priority Queue Pattern
 
-The Scheduler maintains an **in-memory cache** synchronized via events:
+The system separates **caching** (EntityService) from **scheduling** (Scheduler):
 
 ```mermaid
 graph TD
     DB[(PostgreSQL)]
-    ES[EntityService]
-    CH[monitorChan]
-    SCH[Scheduler Cache]
+    ES[EntityService Cache]
+    SCH[Scheduler PQ]
+    POL[Poller]
 
-    DB -->|"initial load"| SCH
-    ES -->|"Event{Create/Update/Delete}"| CH
-    CH -->|"sync"| SCH
+    DB -->|"startup load"| ES
+    ES -->|"CRUD updates cache"| ES
+    SCH -->|"batch request IDs"| ES
+    ES -->|"BatchDeviceResponse"| SCH
+    SCH -->|"qualified devices"| POL
+    POL -->|"credential request"| ES
 ```
 
-**Why a cache?**
-- Sub-millisecond deadline checking (no DB round-trips)
-- Scheduler runs every 5 seconds - would overload DB otherwise
-- Event-driven sync keeps cache consistent
+**EntityService** maintains the source of truth:
+- Device cache: `map[int64]*Device`
+- Credential cache: `map[int64]*CredentialProfile`
+- Updated on every CRUD operation
+
+**Scheduler** is lightweight with a min-heap priority queue:
+- Stores only `(deviceID, deadline)` tuples
+- O(log n) pop for expired entries
+- Requests full device details from EntityService when needed
+- Lazy deletion: deleted devices simply don't get returned
+
+**Why this separation?**
+- EntityService: single source of truth for all entity data
+- Scheduler: minimal memory footprint, efficient deadline checking
+- Poller: gets credentials on-demand, no stale data
 
 ---
 
@@ -409,7 +424,7 @@ graph TD
 ### Go Channels as Message Bus
 
 ```go
-monitorChan := make(chan models.Event, 100)
+deviceChan := make(chan models.Event, 100)
 ```
 
 | Consideration | Choice | Reasoning |
@@ -476,39 +491,43 @@ graph LR
 
 ## Package Reference
 
-### [cmd/server/main.go](file:///home/prem-modha/projects/nms/cmd/server/main.go)
-Application entry point. Initializes all channels, repositories, and services. Single goroutine orchestration.
+### [cmd/app/main.go](file:///home/prem-modha/projects/nms/cmd/app/main.go)
+Application entry point. Initializes all channels, repositories, and services. Orchestrates signal handling and graceful shutdown.
 
 ### [pkg/api/](file:///home/prem-modha/projects/nms/pkg/api)
 - **routes.go**: Generic CRUD route registration using Go generics
-- **auth.go**: JWT authentication middleware
-- **provisioning.go**: Manual discovery/provisioning command handlers
+- **auth.go**: JWT authentication middleware and login handlers
+- **provisioning.go**: Handlers for manual tasks like discovery runs and device activation
+- **security.go**: Security headers middleware
 
 ### [pkg/database/](file:///home/prem-modha/projects/nms/pkg/database)
 - **db.go**: Database connection and GORM initialization
 - **repository.go**: Generic `Repository[T]` interface and GORM implementation
-- **encryption.go**: AES encryption for credential payloads
+- **encryption.go**: AES GCM encryption for credential payloads
 
 ### [pkg/persistence/](file:///home/prem-modha/projects/nms/pkg/persistence)
-- **entityService.go**: Central CRUD service, discovery provisioning, event publishing
+- **entityService.go**: Central CRUD service, in-memory device/credential caches, discovery provisioning, event publishing
 - **metricsService.go**: High-volume metrics persistence and specialized JSONB queries
 
 ### [pkg/scheduler/scheduler.go](file:///home/prem-modha/projects/nms/pkg/scheduler/scheduler.go)
-Timer-based monitor scheduling with in-memory cache. Batch fping for reachability checks.
+Timer-based device scheduling with min-heap priority queue. Batch fping for reachability checks using the `fping` binary.
+
+### [pkg/scheduler/priority_queue.go](file:///home/prem-modha/projects/nms/pkg/scheduler/priority_queue.go)
+Min-heap implementation for deadline-based scheduling. Stores lightweight (deviceID, deadline) tuples.
 
 ### [pkg/poller/poller.go](file:///home/prem-modha/projects/nms/pkg/poller/poller.go)
-Polling orchestration. Groups monitors by plugin, submits to worker pool.
+Polling orchestration. Groups devices by plugin, requests credentials from EntityService, submits to worker pool.
 
 ### [pkg/discovery/discoveryService.go](file:///home/prem-modha/projects/nms/pkg/discovery/discoveryService.go)
-Discovery profile processing. CIDR expansion, plugin execution, result enrichment.
+Discovery profile processing. CIDR/range expansion, plugin execution via `worker.Pool`, result enrichment.
 
 ### [pkg/worker/pool.go](file:///home/prem-modha/projects/nms/pkg/worker/pool.go)
-Generic worker pool for plugin execution. Handles stdin/stdout JSON communication.
+Generic worker pool for plugin execution. Spawns subprocesses and handles stdin/stdout JSON communication.
 
 ### [pkg/models/](file:///home/prem-modha/projects/nms/pkg/models)
-- **models.go**: Domain entities (Device, CredentialProfile, etc.)
-- **event.go**: Event types for inter-service communication
-- **request.go**: Request/Response types for synchronous channel communication
+- **models.go**: Domain entities (Device, CredentialProfile, DiscoveryProfile, Metric)
+- **event.go**: Event types for internal pub-sub communication
+- **request.go**: Request/Response types for point-to-point channel communication
 
 ### [pkg/plugin/types.go](file:///home/prem-modha/projects/nms/pkg/plugin/types.go)
 Plugin contract: `Task` (input) and `Result` (output) types.

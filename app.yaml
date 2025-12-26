@@ -1,26 +1,77 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# NMS Application Configuration
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# This file contains all non-sensitive configuration options.
+# SECURITY: Secrets should be set via environment variables, NOT in this file:
+#   - JWT_SECRET          (required for production)
+#   - ENCRYPTION_KEY      (required for production)
+#   - DB_PASSWORD         (recommended)
+#   - NMS_ADMIN_HASH      (recommended)
+#
+# Configuration Priority (highest to lowest):
+#   1. Environment Variables
+#   2. This file (app.yaml)
+#   3. Built-in defaults
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Database Configuration
-DB_HOST: localhost
-DB_USER: postgres
-DB_PASSWORD: password
-DB_NAME: nms
-DB_PORT: 5432
+# ──────────────────────────────────────────────────────────────────────────────
+DB_HOST: localhost        # PostgreSQL host
+DB_PORT: "5432"           # PostgreSQL port (must be string)
+DB_NAME: nms              # Database name
+DB_USER: postgres         # Database username
+# DB_PASSWORD: ...        # Set via DB_PASSWORD env var
 
+# ──────────────────────────────────────────────────────────────────────────────
 # Server Configuration
-SERVER_ADDRESS: ":8080"
-PLUGINS_DIR: "plugins"
+# ──────────────────────────────────────────────────────────────────────────────
+SERVER_ADDRESS: ":8080"   # HTTP listen address (host:port or :port)
 
-# Availability Check Configuration
-POLL_INTERVAL_SEC: 5
-AV_CHECK_TIMEOUT_MS: 500
-AV_CHECK_RETRIES: 2
+# TLS/HTTPS (optional) - leave empty for HTTP mode
+# When both are set, server runs HTTPS on port 8443
+TLS_CERT_FILE: ""         # Path to TLS certificate file (PEM format)
+TLS_KEY_FILE: ""          # Path to TLS private key file (PEM format)
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Plugin Configuration
+# ──────────────────────────────────────────────────────────────────────────────
+PLUGINS_DIR: "plugins"    # Directory containing plugin executables
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Worker Configuration
-POLL_WORKER_COUNT: 10
-DISC_WORKER_COUNT: 5
+# ──────────────────────────────────────────────────────────────────────────────
+POLL_WORKER_COUNT: 10     # Number of concurrent polling workers
+DISC_WORKER_COUNT: 5      # Number of concurrent discovery workers
 
-# Authentication
-SESSION_DURATION_HOURS: 168
+# ──────────────────────────────────────────────────────────────────────────────
+# Scheduler Configuration
+# ──────────────────────────────────────────────────────────────────────────────
+POLL_INTERVAL_SEC: 5      # Base polling interval in seconds
+AV_CHECK_TIMEOUT_MS: 500  # Availability check (fping) timeout in milliseconds
+AV_CHECK_RETRIES: 2       # Number of fping retries before marking unreachable
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Authentication Configuration
+# ──────────────────────────────────────────────────────────────────────────────
+SESSION_DURATION_HOURS: 168   # JWT token validity (168h = 7 days)
+NMS_ADMIN_USER: admin         # Admin username for login
+# NMS_ADMIN_HASH: ...         # bcrypt hash of admin password (set via env var)
+#                             # Default: hash of "admin"
+#                             # Generate with: go run scripts/hashpassword.go <password>
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Security/Encryption (SET VIA ENVIRONMENT VARIABLES!)
+# ──────────────────────────────────────────────────────────────────────────────
+# JWT_SECRET: ...             # Secret for signing JWT tokens (min 32 chars)
+#                             # Generate with: openssl rand -hex 32
+#
+# ENCRYPTION_KEY: ...         # AES-256 key for credential encryption (64 hex chars)
+#                             # Generate with: openssl rand -hex 32
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Metrics Query Defaults
-METRICS_DEFAULT_LIMIT: 100
-METRICS_DEFAULT_LOOKBACK_HOURS: 1
+# ──────────────────────────────────────────────────────────────────────────────
+METRICS_DEFAULT_LIMIT: 100            # Default max records returned by metrics API
+METRICS_DEFAULT_LOOKBACK_HOURS: 1     # Default time window for metrics queries

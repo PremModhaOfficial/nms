@@ -13,6 +13,8 @@ import (
 	"nms/pkg/models"
 	"nms/pkg/plugin"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 	"gorm.io/gorm"
 )
 
@@ -98,25 +100,53 @@ func (writer *MetricsService) Run(ctx context.Context) {
 	}
 }
 
-// savePollResults persists polling metrics to the database.
+// savePollResults persists polling metrics to the database using batch insert.
 func (writer *MetricsService) savePollResults(ctx context.Context, results []plugin.Result) {
 	slog.Debug("Saving poll results", "component", "MetricsService", "count", len(results))
 
+	// Separate successful results from failures
+	rows := make([][]any, 0, len(results))
+	now := time.Now()
+
 	for _, result := range results {
 		if result.Success {
-			metric := models.Metric{
-				DeviceID: result.DeviceID,
-				Data:     result.Data,
-			}
-			if err := writer.db.WithContext(ctx).Create(&metric).Error; err != nil {
-				slog.Error("Error saving metric", "component", "MetricsService", "device_id", result.DeviceID, "error", err)
-			} else {
-				slog.Debug("Saved metric", "component", "MetricsService", "device_id", result.DeviceID, "size_bytes", len(result.Data))
-			}
+			rows = append(rows, []any{result.DeviceID, result.Data, now})
 		} else {
 			slog.Error("Poll result error", "component", "MetricsService", "target", result.Target, "port", result.Port, "error", result.Error)
 		}
 	}
+
+	if len(rows) == 0 {
+		slog.Debug("No successful results to insert", "component", "MetricsService")
+		return
+	}
+
+	// Get a connection from the pool and unwrap to pgx.Conn
+	conn, err := writer.sqlDB.Conn(ctx)
+	if err != nil {
+		slog.Error("Failed to get connection", "component", "MetricsService", "error", err)
+		return
+	}
+	defer conn.Close()
+
+	err = conn.Raw(func(driverConn any) error {
+		pgxConn := driverConn.(*stdlib.Conn).Conn()
+
+		_, copyErr := pgxConn.CopyFrom(
+			ctx,
+			pgx.Identifier{"metrics"},
+			[]string{"device_id", "data", "timestamp"},
+			pgx.CopyFromRows(rows),
+		)
+		return copyErr
+	})
+
+	if err != nil {
+		slog.Error("Batch insert failed", "component", "MetricsService", "error", err)
+		return
+	}
+
+	slog.Debug("Batch inserted metrics", "component", "MetricsService", "count", len(rows))
 }
 
 // handleQuery handles metrics query requests.

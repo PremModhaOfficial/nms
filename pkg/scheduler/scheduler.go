@@ -12,21 +12,17 @@ import (
 	"nms/pkg/models"
 )
 
-// DeviceWithDeadline combines a device with its next scheduled polling time.
-type DeviceWithDeadline struct {
-	Device   *models.Device
-	Deadline time.Time
-}
-
 // Scheduler manages the scheduling of devices based on deadlines.
+// Uses a min-heap priority queue to efficiently find expired deadlines.
 type Scheduler struct {
-	// Cache maps
-	devices     map[int64]*DeviceWithDeadline
-	credentials map[int64]*models.CredentialProfile
+	// Priority queue ordered by deadline (min-heap)
+	queue DeadlineQueue
+
+	// Request channel to EntityService for device lookups
+	entityReqChan chan<- models.Request
 
 	// Channels - received from outside for event-driven communication
-	deviceEvents <-chan models.Event     // Device CRUD events
-	credEvents   <-chan models.Event     // Credential CRUD events
+	deviceEvents <-chan models.Event     // Device create/update events (to add to queue)
 	OutputChan   chan<- []*models.Device // Sends qualified devices to poller
 
 	// Config
@@ -37,46 +33,31 @@ type Scheduler struct {
 }
 
 // NewScheduler creates a new Scheduler instance.
-// monitorEvents and credEvents are receive-only channels from the communication layer.
 func NewScheduler(
 	deviceEvents <-chan models.Event,
-	credEvents <-chan models.Event,
+	entityReqChan chan<- models.Request,
 	outputChan chan<- []*models.Device,
 	fpingPath string,
 	tickIntervalSec, fpingTimeoutMs, fpingRetries int,
 ) *Scheduler {
 	return &Scheduler{
-		devices:      make(map[int64]*DeviceWithDeadline),
-		credentials:  make(map[int64]*models.CredentialProfile),
-		deviceEvents: deviceEvents,
-		credEvents:   credEvents,
-		OutputChan:   outputChan,
-		fpingPath:    fpingPath,
-		tickInterval: time.Duration(tickIntervalSec) * time.Second,
-		fpingTimeout: fpingTimeoutMs,
-		fpingRetries: fpingRetries,
+		queue:         make(DeadlineQueue, 0),
+		entityReqChan: entityReqChan,
+		deviceEvents:  deviceEvents,
+		OutputChan:    outputChan,
+		fpingPath:     fpingPath,
+		tickInterval:  time.Duration(tickIntervalSec) * time.Second,
+		fpingTimeout:  fpingTimeoutMs,
+		fpingRetries:  fpingRetries,
 	}
 }
 
-// LoadCache populates the internal maps and initializes deadlines.
-func (sched *Scheduler) LoadCache(devices []*models.Device, creds []*models.CredentialProfile) {
-	slog.Info("Loading credentials to cache", "component", "Scheduler", "count", len(creds))
-	// Populate sched.credentials map
-	for _, cred := range creds {
-		sched.credentials[cred.ID] = cred
-	}
-
-	slog.Info("Loading devices to cache", "component", "Scheduler", "count", len(devices))
-	// Populate sched.devices map by creating DeviceWithDeadline for each device
+// InitQueue initializes the priority queue with device IDs.
+// All devices start with deadline = now (immediately eligible).
+func (sched *Scheduler) InitQueue(deviceIDs []int64) {
 	now := time.Now()
-	for _, dev := range devices {
-		sched.devices[dev.ID] = &DeviceWithDeadline{
-			Device:   dev,
-			Deadline: now, // Set initial Deadline to now so they're immediately eligible
-		}
-		slog.Info("Device loaded to cache", "component", "Scheduler", "device_id", dev.ID, "ip", dev.IPAddress, "interval", dev.PollingIntervalSeconds, "deadline", now.Format(time.RFC3339))
-	}
-	slog.Info("Cache load complete", "component", "Scheduler", "device_count", len(sched.devices), "credential_count", len(sched.credentials))
+	sched.queue.InitQueue(deviceIDs, now)
+	slog.Info("Priority queue initialized", "component", "Scheduler", "device_count", len(deviceIDs))
 }
 
 // Run starts the main loop.
@@ -95,10 +76,6 @@ func (sched *Scheduler) Run(ctx context.Context) {
 			slog.Debug("Received device event", "component", "Scheduler", "event_type", event.Type)
 			sched.processDeviceEvent(event)
 
-		case event := <-sched.credEvents:
-			slog.Debug("Received credential event", "component", "Scheduler", "event_type", event.Type)
-			sched.processCredentialEvent(event)
-
 		case <-ticker.C:
 			slog.Debug("Tick - running schedule()", "component", "Scheduler")
 			sched.schedule()
@@ -106,7 +83,8 @@ func (sched *Scheduler) Run(ctx context.Context) {
 	}
 }
 
-// processDeviceEvent handles CRUD events for devices.
+// processDeviceEvent handles create/update events to add devices to queue.
+// Note: Delete events are handled lazily - EntityService won't return deleted devices.
 func (sched *Scheduler) processDeviceEvent(event models.Event) {
 	payload, ok := event.Payload.(*models.Device)
 	if !ok {
@@ -115,89 +93,122 @@ func (sched *Scheduler) processDeviceEvent(event models.Event) {
 	}
 
 	switch event.Type {
-	case models.EventCreate, models.EventUpdate:
-		slog.Info("Processing device event", "component", "Scheduler", "type", event.Type, "device_id", payload.ID, "ip", payload.IPAddress)
-		sched.devices[payload.ID] = &DeviceWithDeadline{
-			Device:   payload,
-			Deadline: time.Now(), // New/updated devices are immediately eligible
-		}
+	case models.EventCreate:
+		// New device: add to queue with immediate deadline
+		sched.queue.PushEntry(payload.ID, time.Now())
+		slog.Info("Added new device to queue", "component", "Scheduler", "device_id", payload.ID)
+	case models.EventUpdate:
+		// Updated device: add a new entry with immediate deadline
+		// The old entry may still exist (lazy management) but will be handled gracefully
+		sched.queue.PushEntry(payload.ID, time.Now())
+		slog.Info("Re-added updated device to queue", "component", "Scheduler", "device_id", payload.ID)
 	case models.EventDelete:
-		slog.Info("Deleting device from cache", "component", "Scheduler", "device_id", payload.ID)
-		delete(sched.devices, payload.ID)
+		// Lazy deletion: don't remove from queue, EntityService won't return it
+		slog.Debug("Device delete event received (lazy queue management)", "component", "Scheduler", "device_id", payload.ID)
 	}
 }
 
-// processCredentialEvent handles CRUD events for credentials.
-func (sched *Scheduler) processCredentialEvent(event models.Event) {
-	payload, ok := event.Payload.(*models.CredentialProfile)
-	if !ok {
-		slog.Error("Invalid payload type in credential event", "component", "Scheduler")
-		return
-	}
-
-	switch event.Type {
-	case models.EventCreate, models.EventUpdate:
-		slog.Info("Processing credential event", "component", "Scheduler", "type", event.Type, "credential_id", payload.ID)
-		sched.credentials[payload.ID] = payload
-	case models.EventDelete:
-		slog.Info("Deleting credential from cache", "component", "Scheduler", "credential_id", payload.ID)
-		delete(sched.credentials, payload.ID)
-	}
-}
-
-// schedule identifies monitors past their deadline, performs batch fping, and updates deadlines.
+// schedule pops expired entries, fetches device details from EntityService,
+// performs fping, and dispatches qualified devices to Poller.
 func (sched *Scheduler) schedule() {
 	now := time.Now()
-	slog.Debug("Checking deadlines", "component", "Scheduler", "now", now.Format(time.RFC3339))
+	slog.Debug("Checking deadlines", "component", "Scheduler", "now", now.Format(time.RFC3339), "queue_size", sched.queue.Len())
 
-	// 1. Identify Candidates (those where deadline <= time.Now())
-	candidates := make([]*DeviceWithDeadline, 0)
-	ips := make([]string, 0)
-	ipSet := make(map[string]bool) // Deduplicate IPs
-
-	for _, dwd := range sched.devices {
-		if dwd.Deadline.Before(now) || dwd.Deadline.Equal(now) {
-			candidates = append(candidates, dwd)
-			// Only add IP to fping list if device requires ping check
-			if dwd.Device.ShouldPing && !ipSet[dwd.Device.IPAddress] {
-				ips = append(ips, dwd.Device.IPAddress)
-				ipSet[dwd.Device.IPAddress] = true
-			}
-		}
-	}
-
-	slog.Debug("Identified candidate devices", "component", "Scheduler", "device_count", len(candidates), "ip_count", len(ips))
-
-	if len(candidates) == 0 {
+	// 1. Pop all expired entries from queue
+	expired := sched.queue.PopExpired(now)
+	if len(expired) == 0 {
 		slog.Debug("No candidates due for polling", "component", "Scheduler")
 		return
 	}
 
-	// 2. Batch fping check on candidate IPs (only those that need it)
-	reachableIPs := sched.performBatchFping(ips)
-	slog.Debug("Fping results", "component", "Scheduler", "reachable_count", len(reachableIPs), "total_ips", len(ips))
+	// Collect device IDs
+	deviceIDs := make([]int64, 0, len(expired))
+	deadlineMap := make(map[int64]time.Time) // Track original deadlines for re-insertion
+	for _, entry := range expired {
+		deviceIDs = append(deviceIDs, entry.DeviceID)
+		deadlineMap[entry.DeviceID] = entry.Deadline
+	}
 
-	// 3. Filter qualified devices and update deadlines
-	qualified := make([]*models.Device, 0)
-	for _, dwd := range candidates {
-		// Qualify if: (1) device doesn't need ping, OR (2) IP is reachable
-		isQualified := !dwd.Device.ShouldPing || reachableIPs[dwd.Device.IPAddress]
+	slog.Debug("Expired entries popped", "component", "Scheduler", "count", len(deviceIDs))
 
-		if isQualified {
-			// Attach credential info before sending
-			dwd.Device.CredentialProfile = sched.credentials[dwd.Device.CredentialProfileID]
-			qualified = append(qualified, dwd.Device)
+	// 2. Request device details from EntityService
+	replyCh := make(chan models.Response, 1)
+	sched.entityReqChan <- models.Request{
+		Operation: models.OpGetBatch,
+		IDs:       deviceIDs,
+		ReplyCh:   replyCh,
+	}
 
-			// Update deadline: new_deadline = current_deadline + interval
-			newDeadline := dwd.Deadline.Add(time.Duration(dwd.Device.PollingIntervalSeconds) * time.Second)
-			dwd.Deadline = newDeadline
-			slog.Info("Device qualified", "component", "Scheduler", "device_id", dwd.Device.ID, "should_ping", dwd.Device.ShouldPing, "next_deadline", newDeadline.Format(time.RFC3339))
-		} else {
-			slog.Debug("Device not reachable", "component", "Scheduler", "device_id", dwd.Device.ID, "ip", dwd.Device.IPAddress)
+	resp := <-replyCh
+	if resp.Error != nil {
+		slog.Error("Failed to get devices from EntityService", "component", "Scheduler", "error", resp.Error)
+		// Re-add entries back to queue to retry later
+		for _, entry := range expired {
+			sched.queue.PushEntry(entry.DeviceID, entry.Deadline.Add(sched.tickInterval))
+		}
+		return
+	}
+
+	batchResp, ok := resp.Data.(*models.BatchDeviceResponse)
+	if !ok {
+		slog.Error("Invalid response type from EntityService", "component", "Scheduler")
+		return
+	}
+
+	slog.Debug("Got devices from EntityService", "component", "Scheduler", "to_ping", len(batchResp.ToPing), "to_skip", len(batchResp.ToSkip))
+
+	// 3. Collect IPs for fping (only from ToPing list)
+	ips := make([]string, 0)
+	ipSet := make(map[string]bool)
+	for _, dev := range batchResp.ToPing {
+		if !ipSet[dev.IPAddress] {
+			ips = append(ips, dev.IPAddress)
+			ipSet[dev.IPAddress] = true
 		}
 	}
 
-	// 4. Dispatch qualified list to OutputChan
+	// 4. Perform batch fping
+	reachableIPs := sched.performBatchFping(ips)
+	slog.Debug("Fping results", "component", "Scheduler", "reachable_count", len(reachableIPs), "total_ips", len(ips))
+
+	// 5. Filter qualified devices and collect entries for re-add
+	qualified := make([]*models.Device, 0)
+	toRequeue := make([]*DeviceDeadline, 0, len(batchResp.ToPing)+len(batchResp.ToSkip))
+
+	// Process ToPing devices
+	for _, dev := range batchResp.ToPing {
+		oldDeadline := deadlineMap[dev.ID]
+		newDeadline := oldDeadline.Add(time.Duration(dev.PollingIntervalSeconds) * time.Second)
+
+		if reachableIPs[dev.IPAddress] {
+			qualified = append(qualified, dev)
+			slog.Info("Device qualified (ping OK)", "component", "Scheduler", "device_id", dev.ID, "next_deadline", newDeadline.Format(time.RFC3339))
+		} else {
+			slog.Debug("Device not reachable", "component", "Scheduler", "device_id", dev.ID, "ip", dev.IPAddress)
+		}
+
+		// Collect for batch re-add
+		toRequeue = append(toRequeue, &DeviceDeadline{DeviceID: dev.ID, Deadline: newDeadline})
+	}
+
+	// Process ToSkip devices (no ping needed, always qualified)
+	for _, dev := range batchResp.ToSkip {
+		oldDeadline := deadlineMap[dev.ID]
+		newDeadline := oldDeadline.Add(time.Duration(dev.PollingIntervalSeconds) * time.Second)
+
+		qualified = append(qualified, dev)
+		slog.Info("Device qualified (ping skipped)", "component", "Scheduler", "device_id", dev.ID, "next_deadline", newDeadline.Format(time.RFC3339))
+
+		// Collect for batch re-add
+		toRequeue = append(toRequeue, &DeviceDeadline{DeviceID: dev.ID, Deadline: newDeadline})
+	}
+
+	// 6. Batch re-add to queue (O(n) instead of O(k log n))
+	if len(toRequeue) > 0 {
+		sched.queue.PushBatch(toRequeue)
+	}
+
+	// 7. Dispatch qualified list to OutputChan
 	if len(qualified) > 0 {
 		slog.Info("Dispatching qualified devices", "component", "Scheduler", "count", len(qualified))
 		sched.OutputChan <- qualified
@@ -238,7 +249,7 @@ func (sched *Scheduler) performBatchFping(ips []string) map[string]bool {
 	err := cmd.Run()
 	// fping returns non-zero if some hosts are unreachable, so we don't treat that as an error
 	if err != nil {
-		slog.Debug("fping exited with error (normal if some hosts down)", "component", "Scheduler", "error", err) // TODO fix logs
+		slog.Debug("fping exited with error (normal if some hosts down)", "component", "Scheduler", "error", err)
 	}
 
 	// Parse stdout for reachable IPs (one per line)
