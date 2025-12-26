@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"nms/pkg/config"
-	"nms/pkg/models"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
