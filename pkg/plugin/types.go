@@ -25,16 +25,9 @@ type Result struct {
 	Success  bool            `json:"success"`
 	Error    string          `json:"error,omitempty"`
 	Hostname string          `json:"hostname,omitempty"` // Discovery mode
-	Metrics  []Metric        `json:"metrics,omitempty"`  // Polling mode (legacy/flattened)
 	Data     json.RawMessage `json:"data,omitempty"`     // Polling mode (hierarchical raw data)
 
 	// Internal fields for provisioning context (set by discovery service)
 	DiscoveryProfileID  int64 `json:"-"`
 	CredentialProfileID int64 `json:"-"`
-}
-
-// Metric represents a single metric data point.
-type Metric struct {
-	Name  string  `json:"name"`
-	Value float64 `json:"value"`
 }

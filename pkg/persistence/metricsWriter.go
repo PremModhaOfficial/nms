@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"time"
 
+	"nms/pkg/models"
 	"nms/pkg/plugin"
 
 	"github.com/jackc/pgx/v5"
@@ -18,16 +19,19 @@ import (
 type MetricsWriter struct {
 	pollResults chan []plugin.Result
 	sqlDB       *sql.DB
+	failureChan chan<- models.Event // Sends failure events to HealthMonitor
 }
 
 // NewMetricsWriter creates a new metrics writer.
 func NewMetricsWriter(
 	pollResults chan []plugin.Result,
 	sqlDB *sql.DB,
+	failureChan chan<- models.Event,
 ) *MetricsWriter {
 	return &MetricsWriter{
 		pollResults: pollResults,
 		sqlDB:       sqlDB,
+		failureChan: failureChan,
 	}
 }
 
@@ -58,7 +62,16 @@ func (writer *MetricsWriter) savePollResults(ctx context.Context, results []plug
 		if result.Success {
 			rows = append(rows, []any{result.DeviceID, result.Data, now})
 		} else {
-			slog.Error("Poll result error", "component", "MetricsWriter", "target", result.Target, "port", result.Port, "error", result.Error)
+			slog.Error("Poll result error", "component", "MetricsWriter", "device_id", result.DeviceID, "target", result.Target, "port", result.Port, "error", result.Error)
+			// Emit failure event to HealthMonitor
+			writer.failureChan <- models.Event{
+				Type: models.EventDeviceFailure,
+				Payload: &models.DeviceFailureEvent{
+					DeviceID:  result.DeviceID,
+					Timestamp: now,
+					Reason:    "poll",
+				},
+			}
 		}
 	}
 

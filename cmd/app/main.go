@@ -14,6 +14,7 @@ import (
 	"nms/pkg/api"
 	"nms/pkg/database"
 	"nms/pkg/discovery"
+	"nms/pkg/health"
 	"nms/pkg/models"
 	"nms/pkg/persistence"
 	"nms/pkg/plugin"
@@ -32,6 +33,7 @@ type services struct {
 	metricsWriter *persistence.MetricsWriter
 	metricsReader *persistence.MetricsReader
 	entityService *persistence.EntityService
+	healthMonitor *health.HealthMonitor
 }
 
 // apiChannels holds request channels used by API handlers
@@ -147,11 +149,11 @@ func initServices(conf *config.Config, db *gorm.DB, fpingPath string) (*services
 	// COMMUNICATION CHANNELS - One per topic
 	// ══════════════════════════════════════════════════════════════
 	deviceChan := make(chan models.Event, EventBufferSize)
-	credentialChan := make(chan models.Event, EventBufferSize)
 	discProfileChan := make(chan models.Event, EventBufferSize)
 	discResultChan := make(chan plugin.Result, EventBufferSize)
 	pollResultChan := make(chan []plugin.Result, DataBufferSize)
 	schedulerToPollerChan := make(chan []*models.Device, ControlBufferSize)
+	failureChan := make(chan models.Event, EventBufferSize) // Shared by Scheduler + MetricsWriter
 
 	crudRequestChan := make(chan models.Request, EventBufferSize)
 	metricRequestChan := make(chan models.Request, EventBufferSize)
@@ -169,7 +171,6 @@ func initServices(conf *config.Config, db *gorm.DB, fpingPath string) (*services
 		db,
 		discProfileChan,
 		deviceChan,
-		credentialChan,
 	)
 
 	// Scheduler uses crudRequestChan to request devices from EntityService
@@ -177,6 +178,7 @@ func initServices(conf *config.Config, db *gorm.DB, fpingPath string) (*services
 		deviceChan,
 		crudRequestChan,
 		schedulerToPollerChan,
+		failureChan,
 		fpingPath,
 		conf.PollIntervalSec,
 		conf.AvCheckTimeoutMs,
@@ -213,7 +215,7 @@ func initServices(conf *config.Config, db *gorm.DB, fpingPath string) (*services
 		os.Exit(1)
 	}
 
-	metricsWriter := persistence.NewMetricsWriter(pollResultChan, metricsWriterDB)
+	metricsWriter := persistence.NewMetricsWriter(pollResultChan, metricsWriterDB, failureChan)
 	metricsReader := persistence.NewMetricsReader(
 		metricRequestChan,
 		metricsReaderDB,
@@ -230,6 +232,14 @@ func initServices(conf *config.Config, db *gorm.DB, fpingPath string) (*services
 		EventBufferSize,
 	)
 
+	// HealthMonitor tracks failures and deactivates devices
+	healthMonitor := health.NewHealthMonitor(
+		failureChan,
+		crudRequestChan,
+		conf.FailureWindowMin,
+		conf.FailureThreshold,
+	)
+
 	svc := &services{
 		sched:         sched,
 		poll:          poll,
@@ -237,6 +247,7 @@ func initServices(conf *config.Config, db *gorm.DB, fpingPath string) (*services
 		metricsWriter: metricsWriter,
 		metricsReader: metricsReader,
 		entityService: entityService,
+		healthMonitor: healthMonitor,
 	}
 
 	channels := &apiChannels{
@@ -268,6 +279,7 @@ func startServices(ctx context.Context, svc *services) {
 	go svc.metricsWriter.Run(ctx)
 	go svc.metricsReader.Run(ctx)
 	go svc.entityService.Run(ctx)
+	go svc.healthMonitor.Run(ctx)
 }
 
 func initRouter(conf *config.Config, auth *api.JwtAuth, channels *apiChannels) *gin.Engine {

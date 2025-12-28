@@ -60,6 +60,10 @@ type Config struct {
 	// Metrics Reader Pool (API queries)
 	MetricsReaderMaxOpen int `mapstructure:"METRICS_READER_MAX_OPEN"`
 	MetricsReaderMaxIdle int `mapstructure:"METRICS_READER_MAX_IDLE"`
+
+	// Health Monitor
+	FailureWindowMin int `mapstructure:"FAILURE_WINDOW_MIN"` // Time window for failure counting (minutes)
+	FailureThreshold int `mapstructure:"FAILURE_THRESHOLD"`  // Number of failures to trigger deactivation
 }
 
 // LoadConfig reads configuration from file or environment variables.
@@ -92,6 +96,8 @@ func LoadConfig(path string) (*Config, error) {
 	v.SetDefault("METRICS_WRITER_MAX_IDLE", 5)
 	v.SetDefault("METRICS_READER_MAX_OPEN", 5)
 	v.SetDefault("METRICS_READER_MAX_IDLE", 2)
+	v.SetDefault("FAILURE_WINDOW_MIN", 3)
+	v.SetDefault("FAILURE_THRESHOLD", 3)
 
 	// 2. Read app.yaml for non-sensitive configuration
 	v.AddConfigPath(path)

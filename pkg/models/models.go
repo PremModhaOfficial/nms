@@ -69,8 +69,3 @@ type MetricQuery struct {
 	End   time.Time `json:"end"`   // end timestamp
 	Limit int       `json:"limit"`
 }
-
-// GetID methods to satisfy Identifiable interface
-func (c CredentialProfile) GetID() int64 { return c.ID }
-func (d DiscoveryProfile) GetID() int64  { return d.ID }
-func (d Device) GetID() int64            { return d.ID }

@@ -10,8 +10,9 @@ const (
 	OpQuery  = "query" // For metrics
 
 	// Scheduler/Poller operations
-	OpGetBatch      = "get_batch"      // Batch lookup by IDs, returns devices split by should_ping
-	OpGetCredential = "get_credential" // Get credential by profile ID
+	OpGetBatch         = "get_batch"         // Batch lookup by IDs, returns devices split by should_ping
+	OpGetCredential    = "get_credential"    // Get credential by profile ID
+	OpDeactivateDevice = "deactivate_device" // Deactivate a device (set status to inactive)
 )
 
 // Request is a point-to-point message with reply channel for synchronous communication

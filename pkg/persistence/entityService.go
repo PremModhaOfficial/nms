@@ -38,7 +38,6 @@ type EntityService struct {
 	// Event publishing channels
 	discoveryProfileEvents chan<- models.Event
 	deviceEvents           chan<- models.Event
-	credentialEvents       chan<- models.Event
 
 	// In-memory caches for fast lookups (no DB round-trips)
 	deviceCache     map[int64]*models.Device
@@ -54,7 +53,6 @@ func NewEntityService(
 	db *gorm.DB,
 	discoveryProfileEvents chan<- models.Event,
 	deviceEvents chan<- models.Event,
-	credentialEvents chan<- models.Event,
 ) *EntityService {
 	return &EntityService{
 		discoveryResultsChan:   discoveryResults,
@@ -65,7 +63,6 @@ func NewEntityService(
 		discoveryProfileRepo:   database.NewGormRepository[models.DiscoveryProfile](db),
 		discoveryProfileEvents: discoveryProfileEvents,
 		deviceEvents:           deviceEvents,
-		credentialEvents:       credentialEvents,
 		deviceCache:            make(map[int64]*models.Device),
 		credentialCache:        make(map[int64]*models.CredentialProfile),
 	}
@@ -361,6 +358,8 @@ func (writer *EntityService) handleCrudRequest(ctx context.Context, req models.R
 		resp = writer.handleGetBatch(req)
 	case models.OpGetCredential:
 		resp = writer.handleGetCredential(req)
+	case models.OpDeactivateDevice:
+		resp = writer.handleDeactivateDevice(ctx, req.ID)
 	default:
 		// Standard CRUD operations
 		switch req.EntityType {
@@ -380,7 +379,7 @@ func (writer *EntityService) handleCrudRequest(ctx context.Context, req models.R
 
 // handleCredentialCRUD handles CRUD for credentials and updates cache
 func (writer *EntityService) handleCredentialCRUD(ctx context.Context, req models.Request) models.Response {
-	resp := handleCRUD(ctx, req, writer.credentialRepo, writer.credentialEvents)
+	resp := handleCRUD(ctx, req, writer.credentialRepo, nil) // No event channel - credentials don't need broadcast
 	if resp.Error == nil {
 		writer.updateCredentialCache(req.Operation, resp.Data)
 	}
@@ -527,4 +526,32 @@ func (writer *EntityService) handleGetCredential(req models.Request) models.Resp
 		}
 	}
 	return models.Response{Data: cred}
+}
+
+// handleDeactivateDevice deactivates a device by setting its status to inactive.
+// Called by HealthMonitor when failure threshold is exceeded.
+func (writer *EntityService) handleDeactivateDevice(ctx context.Context, deviceID int64) models.Response {
+	device, err := writer.deviceRepo.Get(ctx, deviceID)
+	if err != nil {
+		return models.Response{Error: fmt.Errorf("device %d not found: %w", deviceID, err)}
+	}
+
+	// Update device status to inactive
+	device.Status = "inactive"
+	updatedDevice, err := writer.deviceRepo.Update(ctx, deviceID, device)
+	if err != nil {
+		return models.Response{Error: fmt.Errorf("failed to deactivate device %d: %w", deviceID, err)}
+	}
+
+	// Update cache with deactivated device
+	writer.updateDeviceCache(models.OpUpdate, updatedDevice)
+
+	// Publish event for cache invalidation in Scheduler
+	go sendEvent(writer.deviceEvents, models.Event{
+		Type:    models.EventUpdate,
+		Payload: updatedDevice,
+	})
+
+	slog.Info("Device deactivated", "component", "EntityService", "device_id", deviceID)
+	return models.Response{Data: updatedDevice}
 }
