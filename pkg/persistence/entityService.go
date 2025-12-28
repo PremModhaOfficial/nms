@@ -10,7 +10,7 @@ import (
 	"nms/pkg/models"
 	"nms/pkg/plugin"
 
-	"gorm.io/gorm"
+	"github.com/jmoiron/sqlx"
 )
 
 // sendEvent sends an event to a channel without blocking.
@@ -50,7 +50,7 @@ func NewEntityService(
 	discoveryResults <-chan plugin.Result,
 	eventsChan <-chan models.Event,
 	requests <-chan models.Request,
-	db *gorm.DB,
+	db *sqlx.DB,
 	discoveryProfileEvents chan<- models.Event,
 	deviceEvents chan<- models.Event,
 ) *EntityService {
@@ -58,9 +58,9 @@ func NewEntityService(
 		discoveryResultsChan:   discoveryResults,
 		eventsChan:             eventsChan,
 		requestsChan:           requests,
-		credentialRepo:         database.NewGormRepository[models.CredentialProfile](db),
-		deviceRepo:             database.NewGormRepository[models.Device](db),
-		discoveryProfileRepo:   database.NewGormRepository[models.DiscoveryProfile](db),
+		credentialRepo:         database.NewSqlxRepository[models.CredentialProfile](db),
+		deviceRepo:             database.NewSqlxRepository[models.Device](db),
+		discoveryProfileRepo:   database.NewSqlxRepository[models.DiscoveryProfile](db),
 		discoveryProfileEvents: discoveryProfileEvents,
 		deviceEvents:           deviceEvents,
 		deviceCache:            make(map[int64]*models.Device),
@@ -228,7 +228,7 @@ func (writer *EntityService) activateDevice(ctx context.Context, event models.Ev
 }
 
 // handleCRUD is a generic CRUD handler that works with any repository type.
-func handleCRUD[T any](
+func handleCRUD[T models.TableNamer](
 	ctx context.Context,
 	req models.Request,
 	repo database.Repository[T],

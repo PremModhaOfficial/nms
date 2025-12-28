@@ -22,7 +22,7 @@ import (
 	"nms/pkg/scheduling"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
+	"github.com/jmoiron/sqlx"
 )
 
 // services holds background workers that process events
@@ -135,7 +135,7 @@ func loadConfig() *config.Config {
 	return conf
 }
 
-func initDatabase(conf *config.Config) *gorm.DB {
+func initDatabase(conf *config.Config) *sqlx.DB {
 	db, err := database.Connect(conf)
 	if err != nil {
 		slog.Error("Failed to connect to database", "error", err)
@@ -144,7 +144,7 @@ func initDatabase(conf *config.Config) *gorm.DB {
 	return db
 }
 
-func initServices(conf *config.Config, db *gorm.DB, fpingPath string) (*services, *apiChannels) {
+func initServices(conf *config.Config, db *sqlx.DB, fpingPath string) (*services, *apiChannels) {
 	// ══════════════════════════════════════════════════════════════
 	// COMMUNICATION CHANNELS - One per topic
 	// ══════════════════════════════════════════════════════════════
