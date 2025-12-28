@@ -11,11 +11,6 @@ import (
 	"time"
 
 	"nms/pkg/models"
-	"nms/pkg/plugin"
-
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/stdlib"
-	"gorm.io/gorm"
 )
 
 // pathValidator ensures path segments start with a letter and contain safe chars only.
@@ -48,109 +43,54 @@ type BatchMetricResult struct {
 	Results  []*MetricResult `json:"results"`
 }
 
-// MetricsService handles all metrics-related database operations.
-// This is the high-volume hot path for polling data.
-type MetricsService struct {
-	pollResults       chan []plugin.Result
+// MetricQueryRequest holds parameters for a metrics query.
+type MetricQueryRequest struct {
+	DeviceIDs []int64
+	Query     models.MetricQuery
+}
+
+// MetricsReader handles API metric queries.
+// It runs in its own goroutine with a dedicated DB pool to avoid
+// contention with polling writes.
+type MetricsReader struct {
 	requests          <-chan models.Request
 	sqlDB             *sql.DB
-	db                *gorm.DB
 	defaultLimit      int
 	defaultRangeHours int
 }
 
-// NewMetricsService creates a new metrics writer service.
-func NewMetricsService(
-	pollResults chan []plugin.Result,
+// NewMetricsReader creates a new metrics reader.
+func NewMetricsReader(
 	requests <-chan models.Request,
-	db *gorm.DB,
+	sqlDB *sql.DB,
 	defaultLimit int,
 	defaultRangeHours int,
-) *MetricsService {
-	sqlDB, err := db.DB()
-	if err != nil {
-		// This should theoretically not happen if db is connected
-		slog.Error("Failed to get sql.DB from gorm.DB", "component", "MetricsService", "error", err)
-	}
-
-	return &MetricsService{
-		pollResults:       pollResults,
+) *MetricsReader {
+	return &MetricsReader{
 		requests:          requests,
 		sqlDB:             sqlDB,
-		db:                db,
 		defaultLimit:      defaultLimit,
 		defaultRangeHours: defaultRangeHours,
 	}
 }
 
-// Run starts the metrics writer's main loop.
-func (writer *MetricsService) Run(ctx context.Context) {
-	slog.Info("Starting metrics writer", "component", "MetricsService")
+// Run starts the metrics reader's main loop.
+func (reader *MetricsReader) Run(ctx context.Context) {
+	slog.Info("Starting metrics reader", "component", "MetricsReader")
 
 	for {
 		select {
 		case <-ctx.Done():
-			slog.Info("Stopping metrics writer", "component", "MetricsService")
+			slog.Info("Stopping metrics reader", "component", "MetricsReader")
 			return
-		case results := <-writer.pollResults:
-			writer.savePollResults(ctx, results)
-		case req := <-writer.requests:
-			writer.handleQuery(ctx, req)
+		case req := <-reader.requests:
+			reader.handleQuery(ctx, req)
 		}
 	}
-}
-
-// savePollResults persists polling metrics to the database using batch insert.
-func (writer *MetricsService) savePollResults(ctx context.Context, results []plugin.Result) {
-	slog.Debug("Saving poll results", "component", "MetricsService", "count", len(results))
-
-	// Separate successful results from failures
-	rows := make([][]any, 0, len(results))
-	now := time.Now()
-
-	for _, result := range results {
-		if result.Success {
-			rows = append(rows, []any{result.DeviceID, result.Data, now})
-		} else {
-			slog.Error("Poll result error", "component", "MetricsService", "target", result.Target, "port", result.Port, "error", result.Error)
-		}
-	}
-
-	if len(rows) == 0 {
-		slog.Debug("No successful results to insert", "component", "MetricsService")
-		return
-	}
-
-	// Get a connection from the pool and unwrap to pgx.Conn
-	conn, err := writer.sqlDB.Conn(ctx)
-	if err != nil {
-		slog.Error("Failed to get connection", "component", "MetricsService", "error", err)
-		return
-	}
-	defer conn.Close()
-
-	err = conn.Raw(func(driverConn any) error {
-		pgxConn := driverConn.(*stdlib.Conn).Conn()
-
-		_, copyErr := pgxConn.CopyFrom(
-			ctx,
-			pgx.Identifier{"metrics"},
-			[]string{"device_id", "data", "timestamp"},
-			pgx.CopyFromRows(rows),
-		)
-		return copyErr
-	})
-
-	if err != nil {
-		slog.Error("Batch insert failed", "component", "MetricsService", "error", err)
-		return
-	}
-
-	slog.Debug("Batch inserted metrics", "component", "MetricsService", "count", len(rows))
 }
 
 // handleQuery handles metrics query requests.
-func (writer *MetricsService) handleQuery(ctx context.Context, req models.Request) {
+func (reader *MetricsReader) handleQuery(ctx context.Context, req models.Request) {
 	var resp models.Response
 
 	query, ok := req.Payload.(*MetricQueryRequest)
@@ -160,7 +100,7 @@ func (writer *MetricsService) handleQuery(ctx context.Context, req models.Reques
 		return
 	}
 
-	results, err := writer.getMetricsBatch(ctx, query.DeviceIDs, query.Query)
+	results, err := reader.getMetricsBatch(ctx, query.DeviceIDs, query.Query)
 	if err != nil {
 		resp.Error = err
 	} else {
@@ -171,10 +111,10 @@ func (writer *MetricsService) handleQuery(ctx context.Context, req models.Reques
 }
 
 // getMetricsBatch fetches metrics for multiple devices using a prepared statement.
-func (writer *MetricsService) getMetricsBatch(ctx context.Context, deviceIDs []int64, query models.MetricQuery) ([]*BatchMetricResult, error) {
+func (reader *MetricsReader) getMetricsBatch(ctx context.Context, deviceIDs []int64, query models.MetricQuery) ([]*BatchMetricResult, error) {
 	limit := query.Limit
 	if limit <= 0 {
-		limit = writer.defaultLimit
+		limit = reader.defaultLimit
 	}
 
 	// Default time range if not provided (last 1 hour)
@@ -182,7 +122,7 @@ func (writer *MetricsService) getMetricsBatch(ctx context.Context, deviceIDs []i
 		query.End = time.Now()
 	}
 	if query.Start.IsZero() {
-		query.Start = query.End.Add(-time.Duration(writer.defaultRangeHours) * time.Hour)
+		query.Start = query.End.Add(-time.Duration(reader.defaultRangeHours) * time.Hour)
 	}
 
 	// Validate path to prevent SQL injection
@@ -205,7 +145,7 @@ func (writer *MetricsService) getMetricsBatch(ctx context.Context, deviceIDs []i
 		ORDER BY timestamp DESC 
 		LIMIT $4`, pgPath)
 
-	stmt, err := writer.sqlDB.PrepareContext(ctx, sqlQuery)
+	stmt, err := reader.sqlDB.PrepareContext(ctx, sqlQuery)
 	if err != nil {
 		return nil, fmt.Errorf("failed to prepare statement: %w", err)
 	}
@@ -242,10 +182,4 @@ func (writer *MetricsService) getMetricsBatch(ctx context.Context, deviceIDs []i
 	}
 
 	return results, nil
-}
-
-// MetricQueryRequest holds parameters for a metrics query.
-type MetricQueryRequest struct {
-	DeviceIDs []int64
-	Query     models.MetricQuery
 }

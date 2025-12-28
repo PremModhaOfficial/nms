@@ -27,7 +27,7 @@ type discoveryContext struct {
 // DiscoveryService coordinates the discovery process.
 // It listens for DiscoveryProfile events and manages the DiscoveryPool.
 type DiscoveryService struct {
-	pool          *pluginWorker.Pool[plugin.Task, plugin.Result]
+	pool          *pluginWorker.PluginWorkerPool[plugin.Task, plugin.Result]
 	events        <-chan models.Event  // Reads discovery profile events
 	resultCh      chan<- plugin.Result // Writes discovery results
 	pluginDir     string

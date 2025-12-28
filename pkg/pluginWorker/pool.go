@@ -9,8 +9,8 @@ import (
 	"sync"
 )
 
-// Pool is a generic pluginWorker pool that executes plugin binaries with batched tasks
-type Pool[T any, R any] struct {
+// PluginWorkerPool is a generic pluginWorker pool that executes plugin binaries with batched tasks
+type PluginWorkerPool[T any, R any] struct {
 	workerCount int
 	poolName    string   // For logging
 	args        []string // Continuous arguments for every execution
@@ -26,8 +26,8 @@ type Job[T any] struct {
 }
 
 // NewPool creates a new generic pluginWorker pool
-func NewPool[T any, R any](workerCount int, poolName string, bufferSize int, args ...string) *Pool[T, R] {
-	return &Pool[T, R]{
+func NewPool[T any, R any](workerCount int, poolName string, bufferSize int, args ...string) *PluginWorkerPool[T, R] {
+	return &PluginWorkerPool[T, R]{
 		workerCount: workerCount,
 		poolName:    poolName,
 		args:        args,
@@ -37,7 +37,7 @@ func NewPool[T any, R any](workerCount int, poolName string, bufferSize int, arg
 }
 
 // Start begins the pluginWorker pool (call once at startup)
-func (pool *Pool[T, R]) Start(ctx context.Context) {
+func (pool *PluginWorkerPool[T, R]) Start(ctx context.Context) {
 	slog.Info("Starting pluginWorker pool", "component", pool.poolName, "worker_count", pool.workerCount)
 
 	var wg sync.WaitGroup
@@ -55,7 +55,7 @@ func (pool *Pool[T, R]) Start(ctx context.Context) {
 }
 
 // Submit sends a batch of tasks to the pool with the plugin binary path
-func (pool *Pool[T, R]) Submit(binPath string, tasks []T) {
+func (pool *PluginWorkerPool[T, R]) Submit(binPath string, tasks []T) {
 	pool.jobChan <- Job[T]{
 		BinPath: binPath,
 		Tasks:   tasks,
@@ -63,12 +63,12 @@ func (pool *Pool[T, R]) Submit(binPath string, tasks []T) {
 }
 
 // Results returns the channel for receiving results
-func (pool *Pool[T, R]) Results() <-chan []R {
+func (pool *PluginWorkerPool[T, R]) Results() <-chan []R {
 	return pool.resultChan
 }
 
 // worker processes jobs continuously
-func (pool *Pool[T, R]) worker(ctx context.Context, id int, wg *sync.WaitGroup) {
+func (pool *PluginWorkerPool[T, R]) worker(ctx context.Context, id int, wg *sync.WaitGroup) {
 	defer wg.Done()
 	slog.Info("Worker started", "component", pool.poolName, "worker_id", id)
 
@@ -90,10 +90,10 @@ func (pool *Pool[T, R]) worker(ctx context.Context, id int, wg *sync.WaitGroup) 
 	}
 }
 
-//todo  rename pluginWorker to meaningful name
+// todo  rename pluginWorker to meaningful name
 
 // executePlugin runs the plugin binary with the batch of tasks
-func (pool *Pool[T, R]) executePlugin(job Job[T]) []R {
+func (pool *PluginWorkerPool[T, R]) executePlugin(job Job[T]) []R {
 	slog.Debug("Executing plugin", "component", pool.poolName, "bin_path", job.BinPath, "task_count", len(job.Tasks))
 
 	// Marshal tasks to JSON

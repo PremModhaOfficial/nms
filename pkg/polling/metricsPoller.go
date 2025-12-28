@@ -14,7 +14,7 @@ import (
 
 // Poller manages plugin execution for polling devices.
 type Poller struct {
-	pool          *pluginWorker.Pool[plugin.Task, plugin.Result]
+	pool          *pluginWorker.PluginWorkerPool[plugin.Task, plugin.Result]
 	pluginDir     string
 	plugins       map[string]string // pluginID -> binary path
 	encryptionKey string

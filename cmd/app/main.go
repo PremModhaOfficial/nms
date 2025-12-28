@@ -26,11 +26,12 @@ import (
 
 // services holds background workers that process events
 type services struct {
-	sched          *scheduling.Scheduler
-	poll           *polling.Poller
-	discService    *discovery.DiscoveryService
-	metricsService *persistence.MetricsService
-	entityService  *persistence.EntityService
+	sched         *scheduling.Scheduler
+	poll          *polling.Poller
+	discService   *discovery.DiscoveryService
+	metricsWriter *persistence.MetricsWriter
+	metricsReader *persistence.MetricsReader
+	entityService *persistence.EntityService
 }
 
 // apiChannels holds request channels used by API handlers
@@ -193,10 +194,29 @@ func initServices(conf *config.Config, db *gorm.DB, fpingPath string) (*services
 		pollResultChan,
 	)
 
-	metricsService := persistence.NewMetricsService(
-		pollResultChan,
+	// Create separate DB pools for metrics components
+	metricsWriterDB, err := database.ConnectRaw(
+		conf, "MetricsWriter",
+		conf.MetricsWriterMaxOpen, conf.MetricsWriterMaxIdle,
+	)
+	if err != nil {
+		slog.Error("Failed to create MetricsWriter DB pool", "error", err)
+		os.Exit(1)
+	}
+
+	metricsReaderDB, err := database.ConnectRaw(
+		conf, "MetricsReader",
+		conf.MetricsReaderMaxOpen, conf.MetricsReaderMaxIdle,
+	)
+	if err != nil {
+		slog.Error("Failed to create MetricsReader DB pool", "error", err)
+		os.Exit(1)
+	}
+
+	metricsWriter := persistence.NewMetricsWriter(pollResultChan, metricsWriterDB)
+	metricsReader := persistence.NewMetricsReader(
 		metricRequestChan,
-		db,
+		metricsReaderDB,
 		conf.MetricsDefaultLimit,
 		conf.MetricsDefaultLookbackHours,
 	)
@@ -211,11 +231,12 @@ func initServices(conf *config.Config, db *gorm.DB, fpingPath string) (*services
 	)
 
 	svc := &services{
-		sched:          sched,
-		poll:           poll,
-		discService:    discService,
-		metricsService: metricsService,
-		entityService:  entityService,
+		sched:         sched,
+		poll:          poll,
+		discService:   discService,
+		metricsWriter: metricsWriter,
+		metricsReader: metricsReader,
+		entityService: entityService,
 	}
 
 	channels := &apiChannels{
@@ -244,7 +265,8 @@ func startServices(ctx context.Context, svc *services) {
 	go svc.sched.Run(ctx)
 	go svc.poll.Run(ctx)
 	go svc.discService.Start(ctx)
-	go svc.metricsService.Run(ctx)
+	go svc.metricsWriter.Run(ctx)
+	go svc.metricsReader.Run(ctx)
 	go svc.entityService.Run(ctx)
 }
 

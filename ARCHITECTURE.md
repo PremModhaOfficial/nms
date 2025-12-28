@@ -33,7 +33,8 @@ graph TB
         POL[Poller]
         DISC[DiscoveryService]
         ES[EntityService]
-        MS[MetricsService]
+        MW[MetricsWriter]
+        MR[MetricsReader]
     end
 
     subgraph "Storage"
@@ -49,7 +50,7 @@ graph TB
     CH --> SCH
     CH --> DISC
     CH --> ES
-    CH --> MS
+    CH --> MR
 
     SCH --> POL
     POL --> CH
@@ -60,7 +61,8 @@ graph TB
     SCH --> FPING
 
     ES --> PG
-    MS --> PG
+    MW --> PG
+    MR --> PG
 ```
 
 ### Key Architectural Properties
@@ -507,7 +509,8 @@ Application entry point. Initializes all channels, repositories, and services. O
 
 ### [pkg/persistence/](file:///home/prem-modha/projects/nms/pkg/persistence)
 - **entityService.go**: Central CRUD service, in-memory device/credential caches, discovery provisioning, event publishing
-- **metricsService.go**: High-volume metrics persistence and specialized JSONB queries
+- **metricsWriter.go**: High-volume polling metrics ingestion with dedicated DB pool (internal)
+- **metricsReader.go**: API metric queries with dedicated DB pool (external)
 
 ### [pkg/scheduler/scheduler.go](file:///home/prem-modha/projects/nms/pkg/scheduler/scheduler.go)
 Timer-based device scheduling with min-heap priority queue. Batch fping for reachability checks using the `fping` binary.
