@@ -160,7 +160,8 @@ func buildInsertParts(entity any) (cols string, placeholders string, vals []any)
 }
 
 // buildUpdateParts returns SET clause and values for UPDATE
-// Skips id, created_at, updated_at and fields marked db:"-"
+// Skips id, created_at, updated_at, fields marked db:"-"
+// Skips zero values for fields marked with update:"omitempty"
 func buildUpdateParts(entity any) (setParts string, vals []any) {
 	v := reflect.ValueOf(entity).Elem()
 	t := v.Type()
@@ -177,9 +178,17 @@ func buildUpdateParts(entity any) (setParts string, vals []any) {
 			continue
 		}
 
-		// Skip zero time values (optional fields not provided)
+		// Skip zero time values (always skip - timestamps are auto-managed)
 		if field.Type == reflect.TypeOf(time.Time{}) && v.Field(i).Interface().(time.Time).IsZero() {
 			continue
+		}
+
+		// Check for update:"omitempty" tag - skip zero values for partial updates
+		updateTag := field.Tag.Get("update")
+		if strings.Contains(updateTag, "omitempty") {
+			if isZeroValue(v.Field(i)) {
+				continue
+			}
 		}
 
 		parts = append(parts, fmt.Sprintf("%s = $%d", dbTag, idx))
@@ -188,4 +197,24 @@ func buildUpdateParts(entity any) (setParts string, vals []any) {
 	}
 
 	return strings.Join(parts, ", "), vals
+}
+
+// isZeroValue checks if a reflect.Value is the zero value for its type
+func isZeroValue(v reflect.Value) bool {
+	switch v.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return v.Int() == 0
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return v.Uint() == 0
+	case reflect.Float32, reflect.Float64:
+		return v.Float() == 0
+	case reflect.String:
+		return v.String() == ""
+	case reflect.Bool:
+		return !v.Bool()
+	case reflect.Ptr, reflect.Interface, reflect.Slice, reflect.Map, reflect.Chan:
+		return v.IsNil()
+	default:
+		return false
+	}
 }

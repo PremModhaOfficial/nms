@@ -22,6 +22,26 @@
     {
       "key": "jwt_token",
       "value": ""
+    },
+    {
+      "key": "win_a_port",
+      "value": "15985",
+      "description": "WinRM port for WIN A VM"
+    },
+    {
+      "key": "win_clone_port",
+      "value": "25985",
+      "description": "WinRM port for winRm_a_clone_1 VM"
+    },
+    {
+      "key": "vm_username",
+      "value": "vboxuser",
+      "description": "Default VirtualBox VM username"
+    },
+    {
+      "key": "vm_password",
+      "value": "admin",
+      "description": "Default VirtualBox VM password"
     }
   ],
   "item": [
@@ -111,7 +131,7 @@
           }
         },
         {
-          "name": "Create Credential",
+          "name": "Create VBox Credential",
           "request": {
             "method": "POST",
             "header": [
@@ -122,7 +142,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n    \"name\": \"Windows Admin\",\n    \"protocol\": \"winrm\",\n    \"payload\": \"{\\\"username\\\": \\\"admin\\\", \\\"password\\\": \\\"secret\\\"}\"\n}"
+              "raw": "{\n    \"name\": \"VirtualBox VMs\",\n    \"protocol\": \"winrm\",\n    \"payload\": \"{\\\"username\\\": \\\"{{vm_username}}\\\", \\\"password\\\": \\\"{{vm_password}}\\\"}\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/v1/credentials",
@@ -149,7 +169,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n    \"name\": \"Windows Admin Updated\",\n    \"protocol\": \"winrm\",\n    \"payload\": \"{\\\"username\\\": \\\"newadmin\\\", \\\"password\\\": \\\"newsecret\\\"}\"\n}"
+              "raw": "{\n    \"name\": \"VirtualBox VMs Updated\",\n    \"protocol\": \"winrm\",\n    \"payload\": \"{\\\"username\\\": \\\"vboxuser\\\", \\\"password\\\": \\\"admin\\\"}\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/v1/credentials/1",
@@ -224,7 +244,7 @@
           }
         },
         {
-          "name": "Create Device",
+          "name": "Create Device - WIN A",
           "request": {
             "method": "POST",
             "header": [
@@ -235,7 +255,34 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n    \"hostname\": \"server-01\",\n    \"ip_address\": \"192.168.1.10\",\n    \"plugin_id\": \"winrm\",\n    \"port\": 5985,\n    \"credential_profile_id\": 1,\n    \"discovery_profile_id\": 1,\n    \"polling_interval_seconds\": 60,\n    \"should_ping\": true\n}"
+              "raw": "{\n    \"hostname\": \"WIN-A\",\n    \"ip_address\": \"127.0.0.1\",\n    \"plugin_id\": \"winrm\",\n    \"port\": {{win_a_port}},\n    \"credential_profile_id\": 1,\n    \"discovery_profile_id\": 1,\n    \"polling_interval_seconds\": 60,\n    \"should_ping\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/devices",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "devices"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create Device - Win Clone",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"hostname\": \"WIN-CLONE\",\n    \"ip_address\": \"127.0.0.1\",\n    \"plugin_id\": \"winrm\",\n    \"port\": {{win_clone_port}},\n    \"credential_profile_id\": 1,\n    \"discovery_profile_id\": 1,\n    \"polling_interval_seconds\": 60,\n    \"should_ping\": true\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/v1/devices",
@@ -262,7 +309,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n    \"hostname\": \"server-01-updated\",\n    \"ip_address\": \"192.168.1.10\",\n    \"plugin_id\": \"winrm\",\n    \"port\": 5985,\n    \"credential_profile_id\": 1,\n    \"discovery_profile_id\": 1,\n    \"polling_interval_seconds\": 120,\n    \"should_ping\": false\n}"
+              "raw": "{\n    \"hostname\": \"WIN-A-Updated\",\n    \"polling_interval_seconds\": 120,\n    \"should_ping\": false\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/v1/devices/1",
@@ -337,7 +384,7 @@
           }
         },
         {
-          "name": "Create Discovery Profile",
+          "name": "Create Discovery Profile - LocalVMs",
           "request": {
             "method": "POST",
             "header": [
@@ -348,7 +395,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n    \"name\": \"Office Network\",\n    \"target\": \"192.168.1.0/24\",\n    \"port\": 5985,\n    \"credential_profile_id\": 1,\n    \"auto_provision\": true,\n    \"auto_run\": true\n}"
+              "raw": "{\n    \"name\": \"LocalVMs\",\n    \"target\": \"127.0.0.1\",\n    \"port\": {{win_a_port}},\n    \"credential_profile_id\": 1,\n    \"auto_provision\": true\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/v1/discovery_profiles",
@@ -375,7 +422,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n    \"name\": \"Office Network Updated\",\n    \"target\": \"192.168.2.0/24\",\n    \"port\": 5985,\n    \"credential_profile_id\": 1,\n    \"auto_provision\": false,\n    \"auto_run\": false\n}"
+              "raw": "{\n    \"name\": \"LocalVMs Updated\",\n    \"target\": \"127.0.0.1\",\n    \"port\": {{win_a_port}},\n    \"credential_profile_id\": 1,\n    \"auto_provision\": false\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/v1/discovery_profiles/1",
@@ -431,10 +478,10 @@
       ]
     },
     {
-      "name": "Activation",
+      "name": "Provisioning",
       "item": [
         {
-          "name": "Activate Device",
+          "name": "Provision Device",
           "request": {
             "method": "POST",
             "header": [
@@ -448,7 +495,7 @@
               "raw": "{\n    \"polling_interval_seconds\": 60\n}"
             },
             "url": {
-              "raw": "{{base_url}}/api/v1/devices/1/activate",
+              "raw": "{{base_url}}/api/v1/devices/1/provision",
               "host": [
                 "{{base_url}}"
               ],
@@ -457,7 +504,7 @@
                 "v1",
                 "devices",
                 "1",
-                "activate"
+                "provision"
               ]
             }
           }

@@ -38,7 +38,6 @@ type DiscoveryProfile struct {
 	Port                int       `db:"port" json:"port" binding:"required,min=1,max=65535"`
 	CredentialProfileID int64     `db:"credential_profile_id" json:"credential_profile_id" binding:"required"`
 	AutoProvision       bool      `db:"auto_provision" json:"auto_provision"`
-	AutoRun             bool      `db:"auto_run" json:"auto_run"`
 	CreatedAt           time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt           time.Time `db:"updated_at" json:"updated_at"`
 
@@ -47,17 +46,18 @@ type DiscoveryProfile struct {
 }
 
 // Device represents the devices table
+// Note: credential_profile_id and discovery_profile_id are immutable (validated in EntityService)
 type Device struct {
 	ID                     int64     `db:"id" json:"id"`
-	Hostname               string    `db:"hostname" json:"hostname"`
-	IPAddress              string    `db:"ip_address" json:"ip_address" binding:"required,ip"`
-	PluginID               string    `db:"plugin_id" json:"plugin_id" binding:"required"`
-	Port                   int       `db:"port" json:"port"`
-	CredentialProfileID    int64     `db:"credential_profile_id" json:"credential_profile_id" binding:"required"`
-	DiscoveryProfileID     int64     `db:"discovery_profile_id" json:"discovery_profile_id" binding:"required"`
-	PollingIntervalSeconds int       `db:"polling_interval_seconds" json:"polling_interval_seconds" binding:"min=1"`
+	Hostname               string    `db:"hostname" json:"hostname" update:"omitempty"`
+	IPAddress              string    `db:"ip_address" json:"ip_address" binding:"omitempty,ip" update:"omitempty"`
+	PluginID               string    `db:"plugin_id" json:"plugin_id" update:"omitempty"`
+	Port                   int       `db:"port" json:"port" binding:"omitempty,min=1,max=65535" update:"omitempty"`
+	CredentialProfileID    int64     `db:"credential_profile_id" json:"credential_profile_id" update:"omitempty"`
+	DiscoveryProfileID     int64     `db:"discovery_profile_id" json:"discovery_profile_id" update:"omitempty"`
+	PollingIntervalSeconds int       `db:"polling_interval_seconds" json:"polling_interval_seconds" binding:"omitempty,min=1" update:"omitempty"`
 	ShouldPing             bool      `db:"should_ping" json:"should_ping"`
-	Status                 string    `db:"status" json:"status" binding:"oneof=discovered active inactive error"`
+	Status                 string    `db:"status" json:"status" binding:"omitempty,oneof=discovered active inactive error" update:"omitempty"`
 	CreatedAt              time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt              time.Time `db:"updated_at" json:"updated_at"`
 

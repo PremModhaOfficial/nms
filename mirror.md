@@ -1,219 +1,158 @@
-# main - cmd/server/main.go
+# NMS Master Project Mirror
 
-## main
-- Initializes all communication channels with specified buffer sizes.
-- Connects to PostgreSQL using GORM.
-- Instantiates all core services: `EntityService`, `MetricsService`, `Scheduler`, `Poller`, and `DiscoveryService`.
-- Starts services as background goroutines.
-- Configures and starts Gin HTTP server with API routes and JWT middleware.
+This document is a hand-crafted, comprehensive summary of every file in the NMS project. It describes the purpose, logic, and execution flow of each component to provide a complete understanding of the system without needing to read the source code.
 
 ---
 
-# api - pkg/api/
+## 📂 Project Root (Infrastructure & Orchestration)
 
-## LoginHandler (auth.go)
-- Validates admin credentials against environment variables.
-- Issues JWT tokens with 24-hour expiration.
+### `Makefile`
+- **Purpose**: Task runner for build, run, and maintenance operations.
+- **Targets**:
+    - `build`: Compiles the server (`nms-server`) and the WinRM plugin.
+    - `run`: Executes `start.sh`.
+    - `seed`: Runs `seed.py` to populate initial data.
+    - `db-setup`: Initializes the PostgreSQL database using `schema.sql`.
+    - `first-run`: Sequential execution of `stop`, `db-setup`, `build`, and `run`.
 
-## JWTMiddleware (auth.go)
-- Validates `Authorization: Bearer <token>` header.
-- Injects claims into Gin context.
+### `schema.sql`
+- **Purpose**: Defines the PostgreSQL database schema.
+- **Tables**:
+    - `credential_profiles`: Stores encrypted credentials (AES) and protocol types.
+    - `discovery_profiles`: Stores scan targets (IP/CIDR) and scheduling details.
+    - `devices`: Primary entity table for managed network devices.
+    - `metrics`: Time-series table for raw polling data (JSONB).
 
-## RunDiscoveryHandler (provisioning.go)
-- Publishes `EventTriggerDiscovery` to `provisioningEventChan`.
-- Triggers discovery for a specific profile ID.
+### `start.sh`
+- **Purpose**: Secure server startup script.
+- **Flow**:
+    1. Compiles server and WinRM plugin into `bin/`.
+    2. Sets up environment variables for database connection.
+    3. **Security**: Generates bcrypt hashes for custom admin passwords using `scripts/hashpassword.go`.
+    4. **Secrets**: Generates random JWT secrets if not provided.
+    5. Launches `bin/nms-app`.
 
-## ProvisionDeviceHandler (provisioning.go)
-- Publishes `EventProvisionDevice` to `provisioningEventChan`.
-- Queues manual device provisioning with custom polling intervals.
+### `app.yaml`
+- **Purpose**: Default configuration values for the application (Viper-compatible).
+- **Contents**: Database defaults, worker counts, polling intervals, and resource limits.
 
-## respondError (response.go)
-- Standards API error responses in unified JSON format.
-- Aborts Gin context execution.
-
-## EncryptStruct / DecryptStruct (encryption.go)
-- Uses AES-256 to encrypt/decrypt fields tagged with `gocrypt:"aes"`.
-
-## DecryptPayload (encryption.go)
-- Specialized decryptor for `CredentialProfile` JSON payloads.
-
-## RegisterEntityRoutes (routes.go)
-- Dynamically registers standard CRUD routes for generic entity types.
-- Injects request channel for service layer communication.
-
-## listHandler / getHandler / createHandler / updateHandler / deleteHandler (routes.go)
-- Implements request-reply pattern over Go channels.
-- Encrypts sensitive fields during create/update via `database.EncryptStruct`.
-- Blocks on reply channel for synchronous API responses.
-
-## RegisterMetricsRoute (routes.go)
-- Registers `/metrics` endpoint and forwards `MetricQueryRequest` to `MetricsService` via `metricRequestChan`.
-
----
-
-# database - pkg/database/
-
-## Connect (db.go)
-- Establishes GORM PostgreSQL connection using environment configuration.
-- Configures connection pooling and logging.
-
-## GormRepository (repository.go)
-- Implements generic CRUD operations using GORM.
-- Provides standard `List`, `Get`, `Create`, `Update`, `Delete` logic for any model.
-- Includes `GetByField` for targeted entity lookups.
+### `seed.sh` / `seed.py`
+- **Purpose**: Database seeding for demonstration/testing.
+- **Flow**:
+    1. Waits for server to be reachable.
+    2. Logs in to obtain a JWT.
+    3. Creates a Credential Profile.
+    4. Creates an Auto-Provisioning Discovery Profile to trigger initial device detection.
 
 ---
 
-# persistence - pkg/persistence/
+## 📂 Command Layer (`cmd/`)
 
-## EntityService (entityService.go)
-- Orchestrates complex entity persistence, discovery provisioning, and event publishing.
-- Maintains in-memory caches of active devices and credentials for hot-path access.
-
-## NewEntityService (entityService.go)
-- Initializes the service with necessary channels and DB connection.
-
-## Run (entityService.go)
-- Main loop consuming `discoveryResults`, `events`, and `requests`.
-
-## provisionFromDiscovery (entityService.go)
-- Atomically creates `Device` from discovery plugin output.
-- Publishes events for scheduler synchronization.
-
-## handleCrudRequest (entityService.go)
-- Central router for CRUD operations across multiple entity types.
-- Publishes change events to specific topics after successful DB commits.
-
-## MetricsService (metricsService.go)
-- Hot-path service for persisting high-volume polling data and handling metric queries.
-
-## NewMetricsService (metricsService.go)
-- Initializes the metrics service with raw SQL connection and default query limits.
-
-## savePollResults (metricsService.go)
-- Batches `plugin.Result` items for DB insertion.
-
-## handleQuery (metricsService.go)
-- Executes high-performance raw SQL with prepared statements for metric retrieval.
+### `cmd/app/main.go`
+- **Purpose**: System entry point and lifecycle manager.
+- **Flow**: `InitLogger` -> `LoadConfig` -> `InitDB` -> `InitServices` -> `LoadCaches` -> `StartServices` -> `StartHTTPServer`.
+- **Logic**: Uses `signal.NotifyContext` for graceful shutdown, ensuring all background goroutines stop cleanly.
 
 ---
 
-# discovery - pkg/discovery/
+## 📂 API Layer (`pkg/api/`)
 
-## DiscoveryService (discoveryService.go)
-- Coordinates the discovery process across network ranges.
-- Manages its own internal worker pool for parallel scanning.
+### `routes.go`
+- **Purpose**: Defines RESTful endpoints and generic CRUD handlers.
+- **Flow**: 
+    - `RegisterEntityRoutes`: Generic wrapper for GET, POST, PUT, DELETE.
+    - `listHandler`: Sends `OpList` to `EntityService`, decrypts results, masks credentials, and returns JSON.
 
-## Start (discoveryService.go)
-- Initializes discovery worker pool and result collector.
-- Listens for `DiscoveryProfile` changes to trigger new runs.
+### `jwtAuth.go`
+- **Purpose**: Middleware and handlers for security.
+- **Logic**: `LoginHandler` validates credentials against bcrypt hashes and issues signed JWTs. `JWTMiddleware` validates the `Authorization: Bearer` header.
 
-## runDiscovery (discoveryService.go)
-- Expands target CIDR/ranges into individual IPs.
-- Path-finds protocol plugins and submits tasks to `worker.Pool`.
-
-## expandTarget / expandCIDR / expandRange (discoveryService.go)
-- Utility functions for IP address mathematics and target expansion.
-
----
-
-# poller - pkg/poller/
-
-## Poller (poller.go)
-- Manages the execution of protocol-specific plugins for metrics collection.
-- Groups tasks by protocol to optimize worker pool utilization.
-
-## Run (poller.go)
-- Consumes batches of `*models.Device` from the scheduler.
-- Groups devices by `PluginID` for batched execution.
-- Decrypts credentials and submits tasks to `PollPool`.
-
-## collectResults (poller.go)
-- Proxies poll results from worker pool to `MetricsService` via `pollResultChan`.
+### `encryption.go`
+- **Purpose**: AES encryption/decryption layer for struct fields tagged with `gocrypt`.
+- **Logic**: Handles standard strings and `json.RawMessage` fields (like credential payloads).
 
 ---
 
-# scheduler - pkg/scheduler/
+## 📂 Core Services (`pkg/Services/`)
 
-## Scheduler (scheduler.go)
-- Manages the polling schedule using a min-heap priority queue (deadlines).
-- Decouples scheduling logic from network reachability via `fping` batches.
+### `persistence/entityService.go`
+- **Purpose**: The "Source of Truth" for devices and credentials.
+- **Logic**:
+    - Maintains in-memory caches (`deviceCache`, `credentialCache`) protected by RWMutex.
+    - `handleCrudRequest`: Routes incoming requests (from API/Scheduler) to repo operations and updates caches.
+    - **Calls**: `database.Repository` methods, broadcasts `models.Event` to other services.
 
-## LoadCache (scheduler.go)
-- Hydrates in-memory map of devices with calculated deadlines.
+### `scheduling/monitorScheduler.go`
+- **Purpose**: Time-based polling triggers.
+- **Logic**:
+    - Uses `DeadlineQueue` (Min-Heap) to track when devices are due for polling.
+    - `schedule()`: Pops expired items -> requests data from `EntityService` -> runs `fping` -> dispatches to Poller -> pushes back to queue with new deadline.
+- **Calls**: `EntityService` (request-reply), `fping` (os/exec), `Poller` (channel).
 
-## Run (scheduler.go)
-- Ticks every interval to identify due devices.
-- Processes `deviceChan` and `credentialChan` events to maintain cache consistency.
+### `polling/metricsPoller.go`
+- **Purpose**: Executes plugins for data collection.
+- **Logic**:
+    - Groups devices by protocol.
+    - Fetches and decrypts credentials for each batch.
+    - Submits jobs to `pluginWorker.Pool`.
+- **Calls**: `PluginWorkerPool.Submit`, `api.DecryptPayload`.
 
-## schedule (scheduler.go)
-- Identifies due devices and performs batch `fping` reachability check.
-- Updates deadlines based on `PollingIntervalSeconds`.
+### `persistence/metricsWriter.go`
+- **Purpose**: High-performance sink for metrics.
+- **Logic**: Uses `pgx.CopyFrom` for bulk insert of JSON results into the `metrics` table.
+- **Calls**: `pgx` driver.
 
----
+### `persistence/metricsReader.go`
+- **Purpose**: API interface for time-series data.
+- **Logic**: Supports JSONB path filtering (e.g., `cpu.total`) with SQL injection protection via regex path validation.
 
-# worker - pkg/worker/
+### `discovery/discoveryService.go`
+- **Purpose**: Active network discovery.
+- **Logic**: Expands CIDRs/ranges into IPs -> runs discovery plugin -> forwards results to `EntityService`.
+- **Calls**: `expandTarget` (IP logic), `PluginWorkerPool`.
 
-## Pool (pool.go)
-- Generic worker pool implementation for external binary execution.
-- Handles stdin/stdout JSON marshalling for plugin communication.
-
-## NewPool (pool.go)
-- Creates a new pool with fixed worker count and named identifying tag.
-
-## Start (pool.go)
-- Spawns fixed number of worker goroutines.
-
-## executePlugin (pool.go)
-- Marshals tasks to JSON and pipes to plugin via `stdin`.
-- Unmarshals plugin results from `stdout`.
-- Captures `stderr` for structured logging.
-
----
-
-# config - pkg/config/
-
-## Config (config.go)
-- Central structure for application configuration.
-- Mapped from `app.yaml` and environment variables via Viper tags.
-
-## LoadConfig (config.go)
-- Reads `app.yaml` and environment variables via `viper`.
+### `monitorFailure/healthMonitor.go`
+- **Purpose**: Automatic device deactivation.
+- **Logic**: Monitors failure counts within a sliding window. If threshold is hit, it deactivates the device via `EntityService`.
 
 ---
 
-# models - pkg/models/
+## 📂 Plugins & Workers (`pkg/plugin/`, `pkg/pluginWorker/`)
 
-## Device (models.go)
-- Core entity representing a monitored node (IP, Port, Plugin, Credentials).
+### `pluginWorker/pool.go`
+- **Purpose**: Generic batch execution of external binaries.
+- **Logic**: Spawns N workers that consume `Job{BinPath, Tasks}`. Communicates with binaries via JSON Over Stdin/Stdout.
 
-## CredentialProfile (models.go)
-- Encrypted storage for protocol-specific credentials (SNMP, WinRM, etc).
-
-## DiscoveryProfile (models.go)
-- Definition for network scanning (CIDR/Range, Port, Protocol).
-
-## Metric (models.go)
-- Database schema for raw JSONB metric storage.
-
-## Event (event.go)
-- Wrapper for internal system messages (Create/Update/Delete/Trigger).
-
-## Request / Response (request.go)
-- Pair for synchronous request-reply communication across channels.
-
-## TableName (models.go)
-- Explicit GORM table name overrides for all domain entities.
-
-## GetID (models.go)
-- Satisfies `Identifiable` interface for generic repository use.
+### `plugin-code/winrm/main.go`
+- **Purpose**: Implementation of the WinRM polling/discovery plugin.
+- **Logic**:
+    1. Reads batch of tasks from Stdin.
+    2. Concurrently (goroutines) connects to Windows hosts.
+    3. Runs `hostname` for discovery or a massive PowerShell metrics script for polling.
+    4. Outputs JSON array of results to Stdout.
 
 ---
 
-# plugin - pkg/plugin/
+## 📂 Data Models & Communication (`pkg/models/`)
 
-## Task (types.go)
-- JSON contract for data sent TO a plugin (Target, Port, Credentials).
+### `models.go` / `event.go` / `request.go`
+- **Purpose**: Shared structures for internal and external communication.
+- **Logic**:
+    - `Event`: Asynchronous notification (e.g., "DeviceCreated").
+    - `Request`: Synchronous request-reply pattern (API -> EntityService).
+    - `Device/CredentialProfile`: Database/JSON entities.
 
-## Result (types.go)
-- JSON contract for data returned FROM a plugin (Metrics, Success/Error).
+---
+
+## 📂 Scripts & Utilities (`scripts/`)
+
+### `scripts/hashpassword.go`
+- **Purpose**: CLI tool to generate bcrypt hashes (used by `start.sh`).
+
+---
+
+## 📂 Quality Assurance (`tests/`)
+
+### `tests/api/`
+- **Purpose**: Integration tests for API validation and business logic.
+- **Highlights**: `setup_test.go` creates a mock harness with channels to verify that API requests correctly trigger backend events.

@@ -54,7 +54,7 @@ DISC_PAYLOAD=$(jq -n \
                   --arg target "$TARGET" \
                   --argjson port "$PORT" \
                   --argjson cred_id "$CRED_ID" \
-                  '{name: $name, target: $target, port: $port, credential_profile_id: $cred_id, auto_provision: true, auto_run: true}' \
+                  '{name: $name, target: $target, port: $port, credential_profile_id: $cred_id, auto_provision: true}' \
                 )
 
 DISC_RES=$(curl -s -X POST "$URL/discovery" -H "Content-Type: application/json" -d "$DISC_PAYLOAD")

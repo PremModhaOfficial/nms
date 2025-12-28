@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 
 	"nms/pkg/database"
@@ -132,6 +133,11 @@ func (writer *EntityService) provisionFromDiscovery(ctx context.Context, result 
 
 	createdDevice, err := writer.deviceRepo.Create(ctx, &device)
 	if err != nil {
+		// Handle race condition: check if error is due to unique constraint (IP + Port)
+		if strings.Contains(err.Error(), "unique constraint") || strings.Contains(err.Error(), "duplicate key") {
+			slog.Debug("Device already exists (caught by DB constraint)", "component", "EntityService", "target", result.Target, "port", result.Port)
+			return
+		}
 		slog.Error("Failed to create device", "component", "EntityService", "target", result.Target, "error", err)
 		return
 	}
@@ -156,8 +162,8 @@ func (writer *EntityService) handleEvent(ctx context.Context, event models.Event
 	switch event.Type {
 	case models.EventTriggerDiscovery:
 		writer.triggerDiscovery(ctx, event)
-	case models.EventActivateDevice:
-		writer.activateDevice(ctx, event)
+	case models.EventProvisionDevice:
+		writer.provisionDevice(ctx, event)
 	default:
 		slog.Error("Ignoring unknown command type", "component", "EntityService", "type", event.Type)
 	}
@@ -190,11 +196,11 @@ func (writer *EntityService) triggerDiscovery(ctx context.Context, event models.
 	slog.Info("Triggered discovery for profile", "component", "EntityService", "profile_id", cmd.DiscoveryProfileID)
 }
 
-// activateDevice activates a discovered device and sets its polling interval.
-func (writer *EntityService) activateDevice(ctx context.Context, event models.Event) {
-	cmd, ok := event.Payload.(*models.DeviceActivateEvent)
+// provisionDevice provisions a discovered device and sets its polling interval.
+func (writer *EntityService) provisionDevice(ctx context.Context, event models.Event) {
+	cmd, ok := event.Payload.(*models.DeviceProvisionEvent)
 	if !ok {
-		slog.Error("Invalid payload for EventActivateDevice", "component", "EntityService")
+		slog.Error("Invalid payload for EventProvisionDevice", "component", "EntityService")
 		return
 	}
 
@@ -224,7 +230,7 @@ func (writer *EntityService) activateDevice(ctx context.Context, event models.Ev
 		Payload: updatedDevice,
 	})
 
-	slog.Info("Activated device", "component", "EntityService", "device_id", cmd.DeviceID)
+	slog.Info("Provisioned device", "component", "EntityService", "device_id", cmd.DeviceID)
 }
 
 // handleCRUD is a generic CRUD handler that works with any repository type.
@@ -379,6 +385,15 @@ func (writer *EntityService) handleCrudRequest(ctx context.Context, req models.R
 
 // handleCredentialCRUD handles CRUD for credentials and updates cache
 func (writer *EntityService) handleCredentialCRUD(ctx context.Context, req models.Request) models.Response {
+	// Validate name is not whitespace-only
+	if req.Operation == models.OpCreate || req.Operation == models.OpUpdate {
+		if cred, ok := req.Payload.(*models.CredentialProfile); ok {
+			if strings.TrimSpace(cred.Name) == "" {
+				return models.Response{Error: fmt.Errorf("name cannot be empty or whitespace-only")}
+			}
+		}
+	}
+
 	resp := handleCRUD(ctx, req, writer.credentialRepo, nil) // No event channel - credentials don't need broadcast
 	if resp.Error == nil {
 		writer.updateCredentialCache(req.Operation, resp.Data)
@@ -388,6 +403,30 @@ func (writer *EntityService) handleCredentialCRUD(ctx context.Context, req model
 
 // handleDeviceCRUD handles CRUD for devices and updates cache
 func (writer *EntityService) handleDeviceCRUD(ctx context.Context, req models.Request) models.Response {
+	if device, ok := req.Payload.(*models.Device); ok {
+		switch req.Operation {
+		case models.OpCreate:
+			// Require valid profile IDs on create
+			if device.CredentialProfileID < 1 {
+				return models.Response{Error: fmt.Errorf("credential_profile_id is required and must be >= 1")}
+			}
+			if device.DiscoveryProfileID < 1 {
+				return models.Response{Error: fmt.Errorf("discovery_profile_id is required and must be >= 1")}
+			}
+			if strings.TrimSpace(device.IPAddress) == "" {
+				return models.Response{Error: fmt.Errorf("ip_address is required")}
+			}
+			if strings.TrimSpace(device.PluginID) == "" {
+				return models.Response{Error: fmt.Errorf("plugin_id is required")}
+			}
+		case models.OpUpdate:
+			// Fail-fast: credential_profile_id and discovery_profile_id are immutable
+			if device.CredentialProfileID != 0 || device.DiscoveryProfileID != 0 {
+				return models.Response{Error: fmt.Errorf("credential_profile_id and discovery_profile_id are immutable after creation")}
+			}
+		}
+	}
+
 	resp := handleCRUD(ctx, req, writer.deviceRepo, writer.deviceEvents)
 	if resp.Error == nil {
 		writer.updateDeviceCache(req.Operation, resp.Data)

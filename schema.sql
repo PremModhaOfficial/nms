@@ -19,7 +19,6 @@ CREATE TABLE IF NOT EXISTS discovery_profiles (
     port INT NOT NULL,
     credential_profile_id BIGINT NOT NULL REFERENCES credential_profiles(id),
     auto_provision BOOLEAN DEFAULT FALSE,
-    auto_run BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -51,3 +50,4 @@ CREATE TABLE IF NOT EXISTS metrics (
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_metrics_device_time ON metrics(device_id, timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_devices_status ON devices(status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_devices_ip_port ON devices(ip_address, port);

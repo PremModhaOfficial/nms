@@ -1,4 +1,4 @@
-package health
+package monitorFailure
 
 import (
 	"context"
@@ -14,9 +14,9 @@ type FailureRecord struct {
 	Count    int
 }
 
-// HealthMonitor tracks device failures and deactivates devices that exceed the threshold.
+// FailureService tracks device failures and deactivates devices that exceed the threshold.
 // It is fully decoupled from other services - only communicates via channels.
-type HealthMonitor struct {
+type FailureService struct {
 	failures      map[int64]FailureRecord
 	failureChan   <-chan models.Event   // Input: failure events (EventDeviceFailure)
 	entityReqChan chan<- models.Request // Output: deactivation requests to EntityService
@@ -24,14 +24,14 @@ type HealthMonitor struct {
 	threshold     int
 }
 
-// NewHealthMonitor creates a new HealthMonitor instance.
+// NewHealthMonitor creates a new FailureService instance.
 func NewHealthMonitor(
 	failureChan <-chan models.Event,
 	entityReqChan chan<- models.Request,
 	windowMin int,
 	threshold int,
-) *HealthMonitor {
-	return &HealthMonitor{
+) *FailureService {
+	return &FailureService{
 		failures:      make(map[int64]FailureRecord),
 		failureChan:   failureChan,
 		entityReqChan: entityReqChan,
@@ -41,68 +41,68 @@ func NewHealthMonitor(
 }
 
 // Run starts the health monitor's main loop.
-func (hm *HealthMonitor) Run(ctx context.Context) {
-	slog.Info("Starting health monitor", "component", "HealthMonitor", "window", hm.window.String(), "threshold", hm.threshold)
+func (failService *FailureService) Run(ctx context.Context) {
+	slog.Info("Starting health monitor", "component", "FailureService", "window", failService.window.String(), "threshold", failService.threshold)
 
 	for {
 		select {
 		case <-ctx.Done():
-			slog.Info("Stopping health monitor", "component", "HealthMonitor")
+			slog.Info("Stopping health monitor", "component", "FailureService")
 			return
-		case event := <-hm.failureChan:
+		case event := <-failService.failureChan:
 			if event.Type != models.EventDeviceFailure {
 				continue // Ignore non-failure events
 			}
 			if payload, ok := event.Payload.(*models.DeviceFailureEvent); ok {
-				hm.handleFailure(payload)
+				failService.handleFailure(payload)
 			}
 		}
 	}
 }
 
 // handleFailure processes a failure event and updates the failure count.
-func (hm *HealthMonitor) handleFailure(event *models.DeviceFailureEvent) {
-	record := hm.failures[event.DeviceID]
+func (failService *FailureService) handleFailure(event *models.DeviceFailureEvent) {
+	record := failService.failures[event.DeviceID]
 
-	if event.Timestamp.Sub(record.LastTime) < hm.window {
+	if event.Timestamp.Sub(record.LastTime) < failService.window {
 		// Within window: increment count
 		record.Count++
 		slog.Debug("Failure count increased",
-			"component", "HealthMonitor",
+			"component", "FailureService",
 			"device_id", event.DeviceID,
 			"reason", event.Reason,
 			"count", record.Count,
-			"threshold", hm.threshold,
+			"threshold", failService.threshold,
 		)
 
-		if record.Count >= hm.threshold {
+		if record.Count >= failService.threshold {
 			slog.Warn("Device exceeded failure threshold, deactivating",
-				"component", "HealthMonitor",
+				"component", "FailureService",
 				"device_id", event.DeviceID,
 				"count", record.Count,
 			)
-			hm.deactivateDevice(event.DeviceID)
-			delete(hm.failures, event.DeviceID) // Clean up after deactivation
+			failService.deactivateDevice(event.DeviceID)
+			delete(failService.failures, event.DeviceID) // Clean up after deactivation
 			return
 		}
 	} else {
 		// Outside window: reset count to 1
 		record.Count = 1
 		slog.Debug("Failure window reset",
-			"component", "HealthMonitor",
+			"component", "FailureService",
 			"device_id", event.DeviceID,
 			"reason", event.Reason,
 		)
 	}
 
 	record.LastTime = event.Timestamp
-	hm.failures[event.DeviceID] = record
+	failService.failures[event.DeviceID] = record
 }
 
 // deactivateDevice sends a deactivation request to EntityService.
-func (hm *HealthMonitor) deactivateDevice(deviceID int64) {
+func (failService *FailureService) deactivateDevice(deviceID int64) {
 	replyCh := make(chan models.Response, 1)
-	hm.entityReqChan <- models.Request{
+	failService.entityReqChan <- models.Request{
 		Operation:  models.OpDeactivateDevice,
 		EntityType: "Device",
 		ID:         deviceID,
@@ -114,13 +114,13 @@ func (hm *HealthMonitor) deactivateDevice(deviceID int64) {
 		resp := <-replyCh
 		if resp.Error != nil {
 			slog.Error("Failed to deactivate device",
-				"component", "HealthMonitor",
+				"component", "FailureService",
 				"device_id", deviceID,
 				"error", resp.Error,
 			)
 		} else {
 			slog.Info("Device deactivated successfully",
-				"component", "HealthMonitor",
+				"component", "FailureService",
 				"device_id", deviceID,
 			)
 		}

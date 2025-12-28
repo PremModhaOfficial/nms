@@ -12,9 +12,9 @@ const (
 
 	// Command events for provisioning
 	EventTriggerDiscovery EventType = "trigger_discovery"
-	EventActivateDevice   EventType = "activate_device"
+	EventProvisionDevice  EventType = "provision_device"
 	EventDeviceFailure    EventType = "device_failure" // Ping or poll failure
-	EventRunDiscovery     EventType = "run_discovery"  // Explicitly run discovery regardless of AutoRun flag
+	EventRunDiscovery     EventType = "run_discovery"  // Explicitly run discovery for a profile
 )
 
 // Event represents a CRUD event for scheduler cache synchronization.
@@ -28,8 +28,8 @@ type DiscoveryTriggerEvent struct {
 	DiscoveryProfileID int64
 }
 
-// DeviceActivateEvent represents a command to activate a discovered device
-type DeviceActivateEvent struct {
+// DeviceProvisionEvent represents a command to provision a discovered device
+type DeviceProvisionEvent struct {
 	DeviceID               int64
 	PollingIntervalSeconds int
 }

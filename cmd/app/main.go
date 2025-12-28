@@ -4,6 +4,11 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"nms/pkg/Services/discovery"
+	"nms/pkg/Services/monitorFailure"
+	persistence2 "nms/pkg/Services/persistence"
+	"nms/pkg/Services/polling"
+	"nms/pkg/Services/scheduling"
 	"os"
 	"os/signal"
 	"syscall"
@@ -13,13 +18,8 @@ import (
 
 	"nms/pkg/api"
 	"nms/pkg/database"
-	"nms/pkg/discovery"
-	"nms/pkg/health"
 	"nms/pkg/models"
-	"nms/pkg/persistence"
 	"nms/pkg/plugin"
-	"nms/pkg/polling"
-	"nms/pkg/scheduling"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx"
@@ -27,13 +27,13 @@ import (
 
 // services holds background workers that process events
 type services struct {
-	sched         *scheduling.Scheduler
-	poll          *polling.Poller
-	discService   *discovery.DiscoveryService
-	metricsWriter *persistence.MetricsWriter
-	metricsReader *persistence.MetricsReader
-	entityService *persistence.EntityService
-	healthMonitor *health.HealthMonitor
+	sched          *scheduling.Scheduler
+	poll           *polling.Poller
+	discService    *discovery.DiscoveryService
+	metricsWriter  *persistence2.MetricsWriter
+	metricsReader  *persistence2.MetricsReader
+	entityService  *persistence2.EntityService
+	failureService *monitorFailure.FailureService
 }
 
 // apiChannels holds request channels used by API handlers
@@ -164,7 +164,7 @@ func initServices(conf *config.Config, db *sqlx.DB, fpingPath string) (*services
 	// ══════════════════════════════════════════════════════════════
 
 	// EntityService needs to be created first as Scheduler and Poller depend on crudRequestChan
-	entityService := persistence.NewEntityService(
+	entityService := persistence2.NewEntityService(
 		discResultChan,
 		provisioningEventChan,
 		crudRequestChan,
@@ -215,8 +215,8 @@ func initServices(conf *config.Config, db *sqlx.DB, fpingPath string) (*services
 		os.Exit(1)
 	}
 
-	metricsWriter := persistence.NewMetricsWriter(pollResultChan, metricsWriterDB, failureChan)
-	metricsReader := persistence.NewMetricsReader(
+	metricsWriter := persistence2.NewMetricsWriter(pollResultChan, metricsWriterDB, failureChan)
+	metricsReader := persistence2.NewMetricsReader(
 		metricRequestChan,
 		metricsReaderDB,
 		conf.MetricsDefaultLimit,
@@ -232,8 +232,8 @@ func initServices(conf *config.Config, db *sqlx.DB, fpingPath string) (*services
 		EventBufferSize,
 	)
 
-	// HealthMonitor tracks failures and deactivates devices
-	healthMonitor := health.NewHealthMonitor(
+	// FailureService tracks failures and deactivates devices
+	healthMonitor := monitorFailure.NewHealthMonitor(
 		failureChan,
 		crudRequestChan,
 		conf.FailureWindowMin,
@@ -241,13 +241,13 @@ func initServices(conf *config.Config, db *sqlx.DB, fpingPath string) (*services
 	)
 
 	svc := &services{
-		sched:         sched,
-		poll:          poll,
-		discService:   discService,
-		metricsWriter: metricsWriter,
-		metricsReader: metricsReader,
-		entityService: entityService,
-		healthMonitor: healthMonitor,
+		sched:          sched,
+		poll:           poll,
+		discService:    discService,
+		metricsWriter:  metricsWriter,
+		metricsReader:  metricsReader,
+		entityService:  entityService,
+		failureService: healthMonitor,
 	}
 
 	channels := &apiChannels{
@@ -259,7 +259,7 @@ func initServices(conf *config.Config, db *sqlx.DB, fpingPath string) (*services
 	return svc, channels
 }
 
-func loadInitialData(entityService *persistence.EntityService, sched *scheduling.Scheduler) {
+func loadInitialData(entityService *persistence2.EntityService, sched *scheduling.Scheduler) {
 	// Load caches in EntityService
 	if err := entityService.LoadCaches(context.Background()); err != nil {
 		slog.Error("Failed to load EntityService caches", "error", err)
@@ -279,7 +279,7 @@ func startServices(ctx context.Context, svc *services) {
 	go svc.metricsWriter.Run(ctx)
 	go svc.metricsReader.Run(ctx)
 	go svc.entityService.Run(ctx)
-	go svc.healthMonitor.Run(ctx)
+	go svc.failureService.Run(ctx)
 }
 
 func initRouter(conf *config.Config, auth *api.JwtAuth, channels *apiChannels) *gin.Engine {
@@ -299,7 +299,7 @@ func initRouter(conf *config.Config, auth *api.JwtAuth, channels *apiChannels) *
 		api.RegisterMetricsRoute(apiGroup, channels.metricRequest)
 
 		apiGroup.POST("/discovery_profiles/:id/run", api.RunDiscoveryHandler(channels.provisioningEvent))
-		apiGroup.POST("/devices/:id/activate", api.ActivateDeviceHandler(channels.provisioningEvent))
+		apiGroup.POST("/devices/:id/provision", api.ProvisionDeviceHandler(channels.provisioningEvent))
 	}
 
 	return router
