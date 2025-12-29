@@ -35,7 +35,7 @@ func RunDiscoveryHandler(eventChan chan<- models.Event) gin.HandlerFunc {
 
 // ProvisionRequest represents the request body for device activation
 type ProvisionRequest struct {
-	PollingIntervalSeconds int `json:"polling_interval_seconds" binding:"required,min=1"`
+	PollingIntervalSeconds int `json:"polling_interval_seconds" binding:"required,min=60,max=3600"`
 }
 
 // ProvisionDeviceHandler publishes a command event to provision a discovered device (zero repo deps)

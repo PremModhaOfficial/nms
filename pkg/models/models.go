@@ -55,7 +55,7 @@ type Device struct {
 	Port                   int       `db:"port" json:"port" binding:"omitempty,min=1,max=65535" update:"omitempty"`
 	CredentialProfileID    int64     `db:"credential_profile_id" json:"credential_profile_id" update:"omitempty"`
 	DiscoveryProfileID     int64     `db:"discovery_profile_id" json:"discovery_profile_id" update:"omitempty"`
-	PollingIntervalSeconds int       `db:"polling_interval_seconds" json:"polling_interval_seconds" binding:"omitempty,min=1" update:"omitempty"`
+	PollingIntervalSeconds int       `db:"polling_interval_seconds" json:"polling_interval_seconds" binding:"omitempty,min=60,max=3600" update:"omitempty"`
 	ShouldPing             bool      `db:"should_ping" json:"should_ping"`
 	Status                 string    `db:"status" json:"status" binding:"omitempty,oneof=discovered active inactive error" update:"omitempty"`
 	CreatedAt              time.Time `db:"created_at" json:"created_at"`

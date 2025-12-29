@@ -4,15 +4,16 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
-	"nms/pkg/Services/discovery"
-	"nms/pkg/Services/monitorFailure"
-	persistence2 "nms/pkg/Services/persistence"
-	"nms/pkg/Services/polling"
-	"nms/pkg/Services/scheduling"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	"nms/pkg/Services/discovery"
+	"nms/pkg/Services/monitorFailure"
+	"nms/pkg/Services/persistence"
+	"nms/pkg/Services/polling"
+	"nms/pkg/Services/scheduling"
 
 	"nms/pkg/config"
 
@@ -30,9 +31,8 @@ type services struct {
 	sched          *scheduling.Scheduler
 	poll           *polling.Poller
 	discService    *discovery.DiscoveryService
-	metricsWriter  *persistence2.MetricsWriter
-	metricsReader  *persistence2.MetricsReader
-	entityService  *persistence2.EntityService
+	metricsService *persistence.MetricsService
+	entityService  *persistence.EntityService
 	failureService *monitorFailure.FailureService
 }
 
@@ -164,7 +164,7 @@ func initServices(conf *config.Config, db *sqlx.DB, fpingPath string) (*services
 	// ══════════════════════════════════════════════════════════════
 
 	// EntityService needs to be created first as Scheduler and Poller depend on crudRequestChan
-	entityService := persistence2.NewEntityService(
+	entityService := persistence.NewEntityService(
 		discResultChan,
 		provisioningEventChan,
 		crudRequestChan,
@@ -197,28 +197,31 @@ func initServices(conf *config.Config, db *sqlx.DB, fpingPath string) (*services
 	)
 
 	// Create separate DB pools for metrics components
-	metricsWriterDB, err := database.ConnectRaw(
-		conf, "MetricsWriter",
+	metricsWriteDB, err := database.ConnectRaw(
+		conf, "MetricsWrite",
 		conf.MetricsWriterMaxOpen, conf.MetricsWriterMaxIdle,
 	)
 	if err != nil {
-		slog.Error("Failed to create MetricsWriter DB pool", "error", err)
+		slog.Error("Failed to create MetricsWrite DB pool", "error", err)
 		os.Exit(1)
 	}
 
-	metricsReaderDB, err := database.ConnectRaw(
-		conf, "MetricsReader",
+	metricsReadDB, err := database.ConnectRaw(
+		conf, "MetricsRead",
 		conf.MetricsReaderMaxOpen, conf.MetricsReaderMaxIdle,
 	)
 	if err != nil {
-		slog.Error("Failed to create MetricsReader DB pool", "error", err)
+		slog.Error("Failed to create MetricsRead DB pool", "error", err)
 		os.Exit(1)
 	}
 
-	metricsWriter := persistence2.NewMetricsWriter(pollResultChan, metricsWriterDB, failureChan)
-	metricsReader := persistence2.NewMetricsReader(
+	metricsService := persistence.NewMetricsService(
+		pollResultChan,
 		metricRequestChan,
-		metricsReaderDB,
+		metricsWriteDB,
+		metricsReadDB,
+		conf.MetricsWorkerCount,
+		failureChan,
 		conf.MetricsDefaultLimit,
 		conf.MetricsDefaultLookbackHours,
 	)
@@ -244,8 +247,7 @@ func initServices(conf *config.Config, db *sqlx.DB, fpingPath string) (*services
 		sched:          sched,
 		poll:           poll,
 		discService:    discService,
-		metricsWriter:  metricsWriter,
-		metricsReader:  metricsReader,
+		metricsService: metricsService,
 		entityService:  entityService,
 		failureService: healthMonitor,
 	}
@@ -259,7 +261,7 @@ func initServices(conf *config.Config, db *sqlx.DB, fpingPath string) (*services
 	return svc, channels
 }
 
-func loadInitialData(entityService *persistence2.EntityService, sched *scheduling.Scheduler) {
+func loadInitialData(entityService *persistence.EntityService, sched *scheduling.Scheduler) {
 	// Load caches in EntityService
 	if err := entityService.LoadCaches(context.Background()); err != nil {
 		slog.Error("Failed to load EntityService caches", "error", err)
@@ -276,8 +278,7 @@ func startServices(ctx context.Context, svc *services) {
 	go svc.sched.Run(ctx)
 	go svc.poll.Run(ctx)
 	go svc.discService.Start(ctx)
-	go svc.metricsWriter.Run(ctx)
-	go svc.metricsReader.Run(ctx)
+	go svc.metricsService.Run(ctx)
 	go svc.entityService.Run(ctx)
 	go svc.failureService.Run(ctx)
 }
