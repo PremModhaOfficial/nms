@@ -67,8 +67,7 @@ for item in data:
         "target": item['target'],
         "port": item['port'],
         "credential_profile_id": cred_id,
-        "auto_provision": True,
-        "auto_run": True
+        "auto_provision": True
     }
 
     print(f"Creating discovery profile for {item.get('request_id', 'target')}...")

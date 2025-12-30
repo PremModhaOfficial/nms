@@ -27,7 +27,7 @@ type discoveryContext struct {
 // DiscoveryService coordinates the discovery process.
 // It listens for DiscoveryProfile events and manages the DiscoveryPool.
 type DiscoveryService struct {
-	pool          *pluginWorker.Pool[plugin.Task, plugin.Result]
+	pool          *pluginWorker.PluginWorkerPool[plugin.Task, plugin.Result]
 	events        <-chan models.Event  // Reads discovery profile events
 	resultCh      chan<- plugin.Result // Writes discovery results
 	pluginDir     string
@@ -90,12 +90,7 @@ func (discovery *DiscoveryService) processEvent(ctx context.Context, event model
 
 	switch event.Type {
 	case models.EventCreate, models.EventUpdate:
-		if profile.AutoRun {
-			slog.Info("Running discovery for profile (AutoRun enabled)", "component", "DiscoveryService", "profile_name", profile.Name)
-			discovery.runDiscovery(ctx, profile)
-		} else {
-			slog.Info("Skipping auto-discovery for profile (AutoRun disabled)", "component", "DiscoveryService", "profile_name", profile.Name)
-		}
+		slog.Info("Discovery profile saved", "component", "DiscoveryService", "profile_name", profile.Name)
 	case models.EventRunDiscovery:
 		slog.Info("Running discovery for profile (explicit trigger)", "component", "DiscoveryService", "profile_name", profile.Name)
 		discovery.runDiscovery(ctx, profile)

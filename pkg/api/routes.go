@@ -2,10 +2,10 @@ package api
 
 import (
 	"net/http"
+	"nms/pkg/Services/persistence"
 	"strconv"
 
 	"nms/pkg/models"
-	"nms/pkg/persistence"
 
 	"github.com/gin-gonic/gin"
 )

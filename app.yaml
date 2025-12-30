@@ -48,7 +48,7 @@ DISC_WORKER_COUNT: 5 # Number of concurrent discovery workers
 # ──────────────────────────────────────────────────────────────────────────────
 # Scheduler Configuration
 # ──────────────────────────────────────────────────────────────────────────────
-POLL_INTERVAL_SEC: 5 # Base polling interval in seconds
+POLL_INTERVAL_SEC: 30 # Scheduler tick interval in seconds (min: 20s)
 AV_CHECK_TIMEOUT_MS: 500 # Availability check (fping) timeout in milliseconds
 AV_CHECK_RETRIES: 2 # Number of fping retries before marking unreachable
 

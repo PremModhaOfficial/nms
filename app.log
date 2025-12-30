@@ -1,0 +1,256 @@
+{"time":"2025-12-28T22:57:00.480486708+05:30","level":"INFO","msg":"Config loaded","poll_interval":5}
+{"time":"2025-12-28T22:57:00.488063073+05:30","level":"INFO","msg":"Configured connection pool","component":"Database","max_open":25,"max_idle":10,"max_life_mins":30}
+{"time":"2025-12-28T22:57:00.488121286+05:30","level":"INFO","msg":"Connected to database","component":"Database"}
+{"time":"2025-12-28T22:57:00.488313823+05:30","level":"INFO","msg":"Fping discovered","path":"/usr/bin/fping"}
+{"time":"2025-12-28T22:57:00.488485919+05:30","level":"INFO","msg":"Scanning plugins","component":"Poller","dir":"plugins"}
+{"time":"2025-12-28T22:57:00.488544199+05:30","level":"INFO","msg":"Loaded plugin","component":"Poller","plugin_id":"winrm","path":"plugins/winrm"}
+{"time":"2025-12-28T22:57:00.488554743+05:30","level":"INFO","msg":"Plugins loaded","component":"Poller","count":1}
+{"time":"2025-12-28T22:57:00.49410243+05:30","level":"INFO","msg":"Connected raw pool","component":"Database","pool":"MetricsWriter","max_open":10,"max_idle":5}
+{"time":"2025-12-28T22:57:00.499588866+05:30","level":"INFO","msg":"Connected raw pool","component":"Database","pool":"MetricsReader","max_open":5,"max_idle":2}
+{"time":"2025-12-28T22:57:00.500999201+05:30","level":"INFO","msg":"Loaded credentials to cache","component":"EntityService","count":1}
+{"time":"2025-12-28T22:57:00.501686605+05:30","level":"INFO","msg":"Loaded devices to cache","component":"EntityService","count":0}
+{"time":"2025-12-28T22:57:00.501712339+05:30","level":"INFO","msg":"Priority queue initialized","component":"Scheduler","device_count":0}
+{"time":"2025-12-28T22:57:00.501719913+05:30","level":"INFO","msg":"Scheduler queue initialized","device_count":0}
+{"time":"2025-12-28T22:57:00.501931549+05:30","level":"WARN","msg":"Security validation warning","error":"JWT_SECRET must be changed from default for production"}
+{"time":"2025-12-28T22:57:00.501974419+05:30","level":"INFO","msg":"Starting discovery service","component":"DiscoveryService"}
+{"time":"2025-12-28T22:57:00.502008604+05:30","level":"INFO","msg":"Starting pluginWorker pool","component":"DiscoveryPool","worker_count":5}
+[GIN-debug] [WARNING] Creating an Engine instance with the Logger and Recovery middleware already attached.
+
+[GIN-debug] [WARNING] Running in "debug" mode. Switch to "release" mode in production.
+ - using env:	export GIN_MODE=release
+ - using code:	gin.SetMode(gin.ReleaseMode)
+
+{"time":"2025-12-28T22:57:00.502028319+05:30","level":"INFO","msg":"Starting metrics reader","component":"MetricsReader"}
+{"time":"2025-12-28T22:57:00.502054861+05:30","level":"INFO","msg":"Starting main loop","component":"Scheduler","tick_interval":"5s"}
+{"time":"2025-12-28T22:57:00.502086117+05:30","level":"INFO","msg":"Starting metrics writer","component":"MetricsWriter"}
+[GIN-debug] POST   /login                    --> nms/pkg/api.(*JwtAuth).LoginHandler-fm (4 handlers)
+{"time":"2025-12-28T22:57:00.502100167+05:30","level":"INFO","msg":"Starting main loop","component":"Poller"}
+{"time":"2025-12-28T22:57:00.502123174+05:30","level":"INFO","msg":"Worker started","component":"DiscoveryPool","worker_id":2}
+[GIN-debug] GET    /api/v1/credentials       --> nms/pkg/api.RegisterEntityRoutes[...].func1 (5 handlers)
+[GIN-debug] GET    /api/v1/credentials/:id   --> nms/pkg/api.RegisterEntityRoutes[...].func2 (5 handlers)
+[GIN-debug] POST   /api/v1/credentials       --> nms/pkg/api.RegisterEntityRoutes[...].func3 (5 handlers)
+[GIN-debug] PUT    /api/v1/credentials/:id   --> nms/pkg/api.RegisterEntityRoutes[...].func4 (5 handlers)
+[GIN-debug] DELETE /api/v1/credentials/:id   --> nms/pkg/api.RegisterEntityRoutes[...].deleteHandler.func5 (5 handlers)
+[GIN-debug] GET    /api/v1/devices           --> nms/pkg/api.RegisterEntityRoutes[...].func1 (5 handlers)
+[GIN-debug] GET    /api/v1/devices/:id       --> nms/pkg/api.RegisterEntityRoutes[...].func2 (5 handlers)
+[GIN-debug] POST   /api/v1/devices           --> nms/pkg/api.RegisterEntityRoutes[...].func3 (5 handlers)
+[GIN-debug] PUT    /api/v1/devices/:id       --> nms/pkg/api.RegisterEntityRoutes[...].func4 (5 handlers)
+[GIN-debug] DELETE /api/v1/devices/:id       --> nms/pkg/api.RegisterEntityRoutes[...].deleteHandler.func5 (5 handlers)
+[GIN-debug] GET    /api/v1/discovery_profiles --> nms/pkg/api.RegisterEntityRoutes[...].func1 (5 handlers)
+[GIN-debug] GET    /api/v1/discovery_profiles/:id --> nms/pkg/api.RegisterEntityRoutes[...].func2 (5 handlers)
+[GIN-debug] POST   /api/v1/discovery_profiles --> nms/pkg/api.RegisterEntityRoutes[...].func3 (5 handlers)
+[GIN-debug] PUT    /api/v1/discovery_profiles/:id --> nms/pkg/api.RegisterEntityRoutes[...].func4 (5 handlers)
+[GIN-debug] DELETE /api/v1/discovery_profiles/:id --> nms/pkg/api.RegisterEntityRoutes[...].deleteHandler.func5 (5 handlers)
+[GIN-debug] POST   /api/v1/metrics           --> nms/pkg/api.RegisterMetricsRoute.metricsHandler.func1 (5 handlers)
+[GIN-debug] POST   /api/v1/discovery_profiles/:id/run --> main.initRouter.RunDiscoveryHandler.func3 (5 handlers)
+[GIN-debug] POST   /api/v1/devices/:id/activate --> main.initRouter.ActivateDeviceHandler.func4 (5 handlers)
+{"time":"2025-12-28T22:57:00.502139484+05:30","level":"INFO","msg":"Starting pluginWorker pool","component":"PollPool","worker_count":10}
+{"time":"2025-12-28T22:57:00.502300794+05:30","level":"INFO","msg":"Starting HTTP app","port":8080}
+{"time":"2025-12-28T22:57:00.502323535+05:30","level":"INFO","msg":"Worker started","component":"PollPool","worker_id":1}
+{"time":"2025-12-28T22:57:00.502354677+05:30","level":"INFO","msg":"Worker started","component":"PollPool","worker_id":2}
+{"time":"2025-12-28T22:57:00.502360347+05:30","level":"INFO","msg":"Worker started","component":"PollPool","worker_id":0}
+{"time":"2025-12-28T22:57:00.502386657+05:30","level":"INFO","msg":"Worker started","component":"PollPool","worker_id":3}
+{"time":"2025-12-28T22:57:00.502347638+05:30","level":"INFO","msg":"Starting health monitor","component":"HealthMonitor","window":"3m0s","threshold":3}
+{"time":"2025-12-28T22:57:00.502412202+05:30","level":"INFO","msg":"Worker started","component":"PollPool","worker_id":8}
+{"time":"2025-12-28T22:57:00.502397774+05:30","level":"INFO","msg":"Worker started","component":"PollPool","worker_id":7}
+{"time":"2025-12-28T22:57:00.502158251+05:30","level":"INFO","msg":"Worker started","component":"DiscoveryPool","worker_id":0}
+{"time":"2025-12-28T22:57:00.502437648+05:30","level":"INFO","msg":"Worker started","component":"PollPool","worker_id":9}
+{"time":"2025-12-28T22:57:00.502172062+05:30","level":"INFO","msg":"Worker started","component":"DiscoveryPool","worker_id":4}
+{"time":"2025-12-28T22:57:00.502180587+05:30","level":"INFO","msg":"Worker started","component":"DiscoveryPool","worker_id":1}
+{"time":"2025-12-28T22:57:00.502468505+05:30","level":"INFO","msg":"Worker started","component":"PollPool","worker_id":5}
+{"time":"2025-12-28T22:57:00.502479525+05:30","level":"INFO","msg":"Worker started","component":"PollPool","worker_id":6}
+{"time":"2025-12-28T22:57:00.502172666+05:30","level":"INFO","msg":"Starting entity writer","component":"EntityService"}
+{"time":"2025-12-28T22:57:00.502416681+05:30","level":"INFO","msg":"Worker started","component":"PollPool","worker_id":4}
+{"time":"2025-12-28T22:57:00.502150994+05:30","level":"INFO","msg":"Worker started","component":"DiscoveryPool","worker_id":3}
+[GIN] 2025/12/28 - 22:57:14 | 401 |     145.915µs |             ::1 | POST     "/api/v1/discovery_profiles/4/run"
+[GIN] 2025/12/28 - 22:57:22 | 200 |  143.765245ms |             ::1 | POST     "/login"
+[GIN] 2025/12/28 - 22:57:34 | 202 |     130.431µs |             ::1 | POST     "/api/v1/discovery_profiles/4/run"
+{"time":"2025-12-28T22:57:34.821155442+05:30","level":"INFO","msg":"Triggered discovery for profile","component":"EntityService","profile_id":4}
+{"time":"2025-12-28T22:57:34.82119228+05:30","level":"INFO","msg":"Running discovery for profile (explicit trigger)","component":"DiscoveryService","profile_name":"win_a_discovery"}
+{"time":"2025-12-28T22:57:34.821219643+05:30","level":"INFO","msg":"Expanded target","component":"DiscoveryService","target":"127.0.0.1","ip_count":1}
+{"time":"2025-12-28T22:57:34.821275518+05:30","level":"INFO","msg":"Submitting tasks to pool","component":"DiscoveryService","task_count":1,"bin_path":"plugins/winrm"}
+{"time":"2025-12-28T22:57:34.827107459+05:30","level":"ERROR","msg":"FAILED: Discovery attempt unsuccessful","component":"DiscoveryService","target":"127.0.0.1","error":"WinRM error: unknown error Post \"http://127.0.0.1:15985/wsman\": dial tcp 127.0.0.1:15985: connect: connection refused"}
+{"time":"2025-12-28T22:57:49.821903147+05:30","level":"INFO","msg":"Added new device to queue","component":"Scheduler","device_id":3}
+[GIN] 2025/12/28 - 22:57:49 | 201 |    5.169884ms |             ::1 | POST     "/api/v1/devices"
+{"time":"2025-12-28T22:57:50.502293486+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T22:57:54+05:30"}
+{"time":"2025-12-28T22:57:50.502390532+05:30","level":"INFO","msg":"Dispatching qualified devices","component":"Scheduler","count":1}
+{"time":"2025-12-28T22:57:50.502423161+05:30","level":"INFO","msg":"Received devices from scheduler","component":"Poller","count":1}
+{"time":"2025-12-28T22:57:50.508321003+05:30","level":"ERROR","msg":"Poll result error","component":"MetricsWriter","device_id":3,"target":"127.0.0.1","port":15985,"error":"WinRM error: unknown error Post \"http://127.0.0.1:15985/wsman\": dial tcp 127.0.0.1:15985: connect: connection refused"}
+{"time":"2025-12-28T22:57:55.506165012+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T22:57:59+05:30"}
+{"time":"2025-12-28T22:57:55.506215221+05:30","level":"INFO","msg":"Dispatching qualified devices","component":"Scheduler","count":1}
+{"time":"2025-12-28T22:57:55.506238299+05:30","level":"INFO","msg":"Received devices from scheduler","component":"Poller","count":1}
+{"time":"2025-12-28T22:57:55.511389879+05:30","level":"ERROR","msg":"Poll result error","component":"MetricsWriter","device_id":3,"target":"127.0.0.1","port":15985,"error":"WinRM error: unknown error Post \"http://127.0.0.1:15985/wsman\": dial tcp 127.0.0.1:15985: connect: connection refused"}
+{"time":"2025-12-28T22:58:00.506172981+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T22:58:04+05:30"}
+{"time":"2025-12-28T22:58:00.506240653+05:30","level":"INFO","msg":"Dispatching qualified devices","component":"Scheduler","count":1}
+{"time":"2025-12-28T22:58:00.506261663+05:30","level":"INFO","msg":"Received devices from scheduler","component":"Poller","count":1}
+{"time":"2025-12-28T22:58:00.511766776+05:30","level":"ERROR","msg":"Poll result error","component":"MetricsWriter","device_id":3,"target":"127.0.0.1","port":15985,"error":"WinRM error: unknown error Post \"http://127.0.0.1:15985/wsman\": dial tcp 127.0.0.1:15985: connect: connection refused"}
+{"time":"2025-12-28T22:58:00.511811573+05:30","level":"WARN","msg":"Device exceeded failure threshold, deactivating","component":"HealthMonitor","device_id":3,"count":3}
+{"time":"2025-12-28T22:58:00.537838332+05:30","level":"INFO","msg":"Device deactivated","component":"EntityService","device_id":3}
+{"time":"2025-12-28T22:58:00.537890778+05:30","level":"INFO","msg":"Device deactivated successfully","component":"HealthMonitor","device_id":3}
+{"time":"2025-12-28T22:58:00.537933358+05:30","level":"INFO","msg":"Re-added updated device to queue","component":"Scheduler","device_id":3}
+[GIN] 2025/12/28 - 22:58:39 | 202 |     148.137µs |             ::1 | POST     "/api/v1/devices/3/activate"
+{"time":"2025-12-28T22:58:39.718145257+05:30","level":"INFO","msg":"Activated device","component":"EntityService","device_id":3}
+{"time":"2025-12-28T22:58:39.718185325+05:30","level":"INFO","msg":"Re-added updated device to queue","component":"Scheduler","device_id":3}
+{"time":"2025-12-28T22:58:40.50217022+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T22:58:44+05:30"}
+{"time":"2025-12-28T22:58:40.502244916+05:30","level":"INFO","msg":"Dispatching qualified devices","component":"Scheduler","count":1}
+{"time":"2025-12-28T22:58:40.50229215+05:30","level":"INFO","msg":"Received devices from scheduler","component":"Poller","count":1}
+{"time":"2025-12-28T22:58:40.507854547+05:30","level":"ERROR","msg":"Poll result error","component":"MetricsWriter","device_id":3,"target":"127.0.0.1","port":15985,"error":"WinRM error: unknown error Post \"http://127.0.0.1:15985/wsman\": read tcp 127.0.0.1:35904->127.0.0.1:15985: read: connection reset by peer"}
+{"time":"2025-12-28T22:58:45.506181534+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T22:58:49+05:30"}
+{"time":"2025-12-28T22:58:45.506250168+05:30","level":"INFO","msg":"Dispatching qualified devices","component":"Scheduler","count":1}
+{"time":"2025-12-28T22:58:45.506275752+05:30","level":"INFO","msg":"Received devices from scheduler","component":"Poller","count":1}
+{"time":"2025-12-28T22:58:45.516259525+05:30","level":"ERROR","msg":"Poll result error","component":"MetricsWriter","device_id":3,"target":"127.0.0.1","port":15985,"error":"WinRM error: unknown error Post \"http://127.0.0.1:15985/wsman\": read tcp 127.0.0.1:35906->127.0.0.1:15985: read: connection reset by peer"}
+{"time":"2025-12-28T22:58:50.506156116+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T22:58:54+05:30"}
+{"time":"2025-12-28T22:58:50.506221827+05:30","level":"INFO","msg":"Dispatching qualified devices","component":"Scheduler","count":1}
+{"time":"2025-12-28T22:58:50.506245899+05:30","level":"INFO","msg":"Received devices from scheduler","component":"Poller","count":1}
+{"time":"2025-12-28T22:58:55.50614616+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T22:58:59+05:30"}
+{"time":"2025-12-28T22:58:55.506208522+05:30","level":"INFO","msg":"Dispatching qualified devices","component":"Scheduler","count":1}
+{"time":"2025-12-28T22:58:55.50623307+05:30","level":"INFO","msg":"Received devices from scheduler","component":"Poller","count":1}
+{"time":"2025-12-28T22:59:00.506159798+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T22:59:04+05:30"}
+{"time":"2025-12-28T22:59:00.506235981+05:30","level":"INFO","msg":"Dispatching qualified devices","component":"Scheduler","count":1}
+{"time":"2025-12-28T22:59:00.5062702+05:30","level":"INFO","msg":"Received devices from scheduler","component":"Poller","count":1}
+{"time":"2025-12-28T22:59:05.506464528+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T22:59:09+05:30"}
+{"time":"2025-12-28T22:59:05.50651788+05:30","level":"INFO","msg":"Dispatching qualified devices","component":"Scheduler","count":1}
+{"time":"2025-12-28T22:59:05.506538773+05:30","level":"INFO","msg":"Received devices from scheduler","component":"Poller","count":1}
+{"time":"2025-12-28T22:59:10.506165257+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T22:59:14+05:30"}
+{"time":"2025-12-28T22:59:10.50624987+05:30","level":"INFO","msg":"Dispatching qualified devices","component":"Scheduler","count":1}
+{"time":"2025-12-28T22:59:10.50627098+05:30","level":"INFO","msg":"Received devices from scheduler","component":"Poller","count":1}
+{"time":"2025-12-28T22:59:15.50617887+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T22:59:19+05:30"}
+{"time":"2025-12-28T22:59:15.506274992+05:30","level":"INFO","msg":"Dispatching qualified devices","component":"Scheduler","count":1}
+{"time":"2025-12-28T22:59:15.506295257+05:30","level":"INFO","msg":"Received devices from scheduler","component":"Poller","count":1}
+{"time":"2025-12-28T22:59:20.506489375+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T22:59:24+05:30"}
+{"time":"2025-12-28T22:59:20.506561964+05:30","level":"INFO","msg":"Dispatching qualified devices","component":"Scheduler","count":1}
+{"time":"2025-12-28T22:59:20.506584993+05:30","level":"INFO","msg":"Received devices from scheduler","component":"Poller","count":1}
+{"time":"2025-12-28T22:59:25.506292878+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T22:59:29+05:30"}
+{"time":"2025-12-28T22:59:25.506368825+05:30","level":"INFO","msg":"Dispatching qualified devices","component":"Scheduler","count":1}
+{"time":"2025-12-28T22:59:25.50639344+05:30","level":"INFO","msg":"Received devices from scheduler","component":"Poller","count":1}
+{"time":"2025-12-28T22:59:30.506157175+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T22:59:34+05:30"}
+{"time":"2025-12-28T22:59:30.506203696+05:30","level":"INFO","msg":"Dispatching qualified devices","component":"Scheduler","count":1}
+{"time":"2025-12-28T22:59:30.506216542+05:30","level":"INFO","msg":"Received devices from scheduler","component":"Poller","count":1}
+{"time":"2025-12-28T22:59:35.506151763+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T22:59:39+05:30"}
+{"time":"2025-12-28T22:59:35.506200304+05:30","level":"INFO","msg":"Dispatching qualified devices","component":"Scheduler","count":1}
+{"time":"2025-12-28T22:59:35.506218317+05:30","level":"INFO","msg":"Received devices from scheduler","component":"Poller","count":1}
+{"time":"2025-12-28T22:59:40.506175831+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T22:59:44+05:30"}
+{"time":"2025-12-28T22:59:40.506230278+05:30","level":"INFO","msg":"Dispatching qualified devices","component":"Scheduler","count":1}
+{"time":"2025-12-28T22:59:40.506250975+05:30","level":"INFO","msg":"Received devices from scheduler","component":"Poller","count":1}
+{"time":"2025-12-28T22:59:45.506159663+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T22:59:49+05:30"}
+{"time":"2025-12-28T22:59:45.506226107+05:30","level":"INFO","msg":"Dispatching qualified devices","component":"Scheduler","count":1}
+{"time":"2025-12-28T22:59:45.506254941+05:30","level":"INFO","msg":"Received devices from scheduler","component":"Poller","count":1}
+{"time":"2025-12-28T22:59:50.50243774+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T22:59:54+05:30"}
+{"time":"2025-12-28T22:59:50.502495822+05:30","level":"INFO","msg":"Dispatching qualified devices","component":"Scheduler","count":1}
+{"time":"2025-12-28T22:59:50.502646975+05:30","level":"INFO","msg":"Received devices from scheduler","component":"Poller","count":1}
+{"time":"2025-12-28T22:59:50.571100584+05:30","level":"ERROR","msg":"Poll result error","component":"MetricsWriter","device_id":3,"target":"127.0.0.1","port":15985,"error":"WinRM error: unknown error Post \"http://127.0.0.1:15985/wsman\": net/http: timeout awaiting response headers"}
+{"time":"2025-12-28T22:59:50.571175274+05:30","level":"WARN","msg":"Device exceeded failure threshold, deactivating","component":"HealthMonitor","device_id":3,"count":3}
+{"time":"2025-12-28T22:59:50.572803692+05:30","level":"INFO","msg":"Device deactivated","component":"EntityService","device_id":3}
+{"time":"2025-12-28T22:59:50.572844648+05:30","level":"INFO","msg":"Re-added updated device to queue","component":"Scheduler","device_id":3}
+{"time":"2025-12-28T22:59:50.572841685+05:30","level":"INFO","msg":"Device deactivated successfully","component":"HealthMonitor","device_id":3}
+{"time":"2025-12-28T22:59:55.524653832+05:30","level":"ERROR","msg":"Poll result error","component":"MetricsWriter","device_id":3,"target":"127.0.0.1","port":15985,"error":"WinRM error: unknown error Post \"http://127.0.0.1:15985/wsman\": net/http: timeout awaiting response headers"}
+{"time":"2025-12-28T23:00:00.542713649+05:30","level":"ERROR","msg":"Poll result error","component":"MetricsWriter","device_id":3,"target":"127.0.0.1","port":15985,"error":"WinRM error: unknown error Post \"http://127.0.0.1:15985/wsman\": net/http: timeout awaiting response headers"}
+{"time":"2025-12-28T23:00:05.541105503+05:30","level":"ERROR","msg":"Poll result error","component":"MetricsWriter","device_id":3,"target":"127.0.0.1","port":15985,"error":"WinRM error: unknown error Post \"http://127.0.0.1:15985/wsman\": net/http: timeout awaiting response headers"}
+{"time":"2025-12-28T23:00:05.541159323+05:30","level":"WARN","msg":"Device exceeded failure threshold, deactivating","component":"HealthMonitor","device_id":3,"count":3}
+{"time":"2025-12-28T23:00:05.543090907+05:30","level":"INFO","msg":"Device deactivated","component":"EntityService","device_id":3}
+{"time":"2025-12-28T23:00:05.543123732+05:30","level":"INFO","msg":"Re-added updated device to queue","component":"Scheduler","device_id":3}
+{"time":"2025-12-28T23:00:05.54313516+05:30","level":"INFO","msg":"Device deactivated successfully","component":"HealthMonitor","device_id":3}
+[GIN] 2025/12/28 - 23:00:06 | 202 |      158.96µs |             ::1 | POST     "/api/v1/devices/3/activate"
+{"time":"2025-12-28T23:00:06.540516116+05:30","level":"INFO","msg":"Activated device","component":"EntityService","device_id":3}
+{"time":"2025-12-28T23:00:06.540569823+05:30","level":"INFO","msg":"Re-added updated device to queue","component":"Scheduler","device_id":3}
+{"time":"2025-12-28T23:00:10.505144883+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T23:00:11+05:30"}
+{"time":"2025-12-28T23:00:10.505193153+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T23:00:11+05:30"}
+{"time":"2025-12-28T23:00:10.505201348+05:30","level":"INFO","msg":"Dispatching qualified devices","component":"Scheduler","count":2}
+{"time":"2025-12-28T23:00:10.505216353+05:30","level":"INFO","msg":"Received devices from scheduler","component":"Poller","count":2}
+{"time":"2025-12-28T23:00:10.54305331+05:30","level":"ERROR","msg":"Poll result error","component":"MetricsWriter","device_id":3,"target":"127.0.0.1","port":15985,"error":"WinRM error: unknown error Post \"http://127.0.0.1:15985/wsman\": net/http: timeout awaiting response headers"}
+{"time":"2025-12-28T23:00:15.50612433+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T23:00:16+05:30"}
+{"time":"2025-12-28T23:00:15.50616895+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T23:00:16+05:30"}
+{"time":"2025-12-28T23:00:15.506179264+05:30","level":"INFO","msg":"Dispatching qualified devices","component":"Scheduler","count":2}
+{"time":"2025-12-28T23:00:15.506194074+05:30","level":"INFO","msg":"Received devices from scheduler","component":"Poller","count":2}
+{"time":"2025-12-28T23:00:15.541906828+05:30","level":"ERROR","msg":"Poll result error","component":"MetricsWriter","device_id":3,"target":"127.0.0.1","port":15985,"error":"WinRM error: unknown error Post \"http://127.0.0.1:15985/wsman\": net/http: timeout awaiting response headers"}
+{"time":"2025-12-28T23:00:20.506130848+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T23:00:21+05:30"}
+{"time":"2025-12-28T23:00:20.506171709+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T23:00:21+05:30"}
+{"time":"2025-12-28T23:00:20.506179123+05:30","level":"INFO","msg":"Dispatching qualified devices","component":"Scheduler","count":2}
+{"time":"2025-12-28T23:00:20.506194219+05:30","level":"INFO","msg":"Received devices from scheduler","component":"Poller","count":2}
+{"time":"2025-12-28T23:00:20.541986341+05:30","level":"ERROR","msg":"Poll result error","component":"MetricsWriter","device_id":3,"target":"127.0.0.1","port":15985,"error":"WinRM error: unknown error Post \"http://127.0.0.1:15985/wsman\": net/http: timeout awaiting response headers"}
+{"time":"2025-12-28T23:00:20.542046612+05:30","level":"WARN","msg":"Device exceeded failure threshold, deactivating","component":"HealthMonitor","device_id":3,"count":3}
+{"time":"2025-12-28T23:00:20.543758612+05:30","level":"INFO","msg":"Device deactivated","component":"EntityService","device_id":3}
+{"time":"2025-12-28T23:00:20.543799661+05:30","level":"INFO","msg":"Device deactivated successfully","component":"HealthMonitor","device_id":3}
+{"time":"2025-12-28T23:00:20.543804969+05:30","level":"INFO","msg":"Re-added updated device to queue","component":"Scheduler","device_id":3}
+{"time":"2025-12-28T23:00:25.543160883+05:30","level":"ERROR","msg":"Poll result error","component":"MetricsWriter","device_id":3,"target":"127.0.0.1","port":15985,"error":"WinRM error: unknown error Post \"http://127.0.0.1:15985/wsman\": net/http: timeout awaiting response headers"}
+{"time":"2025-12-28T23:00:30.540009678+05:30","level":"ERROR","msg":"Poll result error","component":"MetricsWriter","device_id":3,"target":"127.0.0.1","port":15985,"error":"WinRM error: unknown error Post \"http://127.0.0.1:15985/wsman\": net/http: timeout awaiting response headers"}
+{"time":"2025-12-28T23:00:35.541238208+05:30","level":"ERROR","msg":"Poll result error","component":"MetricsWriter","device_id":3,"target":"127.0.0.1","port":15985,"error":"WinRM error: unknown error Post \"http://127.0.0.1:15985/wsman\": net/http: timeout awaiting response headers"}
+{"time":"2025-12-28T23:00:35.541308886+05:30","level":"WARN","msg":"Device exceeded failure threshold, deactivating","component":"HealthMonitor","device_id":3,"count":3}
+{"time":"2025-12-28T23:00:35.543063024+05:30","level":"INFO","msg":"Device deactivated","component":"EntityService","device_id":3}
+{"time":"2025-12-28T23:00:35.543109842+05:30","level":"INFO","msg":"Re-added updated device to queue","component":"Scheduler","device_id":3}
+{"time":"2025-12-28T23:00:35.543137951+05:30","level":"INFO","msg":"Device deactivated successfully","component":"HealthMonitor","device_id":3}
+[GIN] 2025/12/28 - 23:00:39 | 202 |     185.784µs |             ::1 | POST     "/api/v1/devices/3/activate"
+{"time":"2025-12-28T23:00:39.170985793+05:30","level":"INFO","msg":"Activated device","component":"EntityService","device_id":3}
+{"time":"2025-12-28T23:00:39.171049613+05:30","level":"INFO","msg":"Re-added updated device to queue","component":"Scheduler","device_id":3}
+{"time":"2025-12-28T23:00:40.502177606+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T23:00:44+05:30"}
+{"time":"2025-12-28T23:00:40.502241716+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T23:00:44+05:30"}
+{"time":"2025-12-28T23:00:40.502257527+05:30","level":"INFO","msg":"Dispatching qualified devices","component":"Scheduler","count":2}
+{"time":"2025-12-28T23:00:40.502285889+05:30","level":"INFO","msg":"Received devices from scheduler","component":"Poller","count":2}
+{"time":"2025-12-28T23:00:45.506203352+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T23:00:49+05:30"}
+{"time":"2025-12-28T23:00:45.506269481+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T23:00:49+05:30"}
+{"time":"2025-12-28T23:00:45.506284864+05:30","level":"INFO","msg":"Dispatching qualified devices","component":"Scheduler","count":2}
+{"time":"2025-12-28T23:00:45.506309023+05:30","level":"INFO","msg":"Received devices from scheduler","component":"Poller","count":2}
+{"time":"2025-12-28T23:00:50.50616742+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T23:00:54+05:30"}
+{"time":"2025-12-28T23:00:50.506248795+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T23:00:54+05:30"}
+{"time":"2025-12-28T23:00:50.506261451+05:30","level":"INFO","msg":"Dispatching qualified devices","component":"Scheduler","count":2}
+{"time":"2025-12-28T23:00:50.506283775+05:30","level":"INFO","msg":"Received devices from scheduler","component":"Poller","count":2}
+{"time":"2025-12-28T23:00:55.506176841+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T23:00:59+05:30"}
+{"time":"2025-12-28T23:00:55.506286234+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T23:00:59+05:30"}
+{"time":"2025-12-28T23:00:55.506307083+05:30","level":"INFO","msg":"Dispatching qualified devices","component":"Scheduler","count":2}
+{"time":"2025-12-28T23:00:55.506327182+05:30","level":"INFO","msg":"Received devices from scheduler","component":"Poller","count":2}
+{"time":"2025-12-28T23:01:00.506168793+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T23:01:04+05:30"}
+{"time":"2025-12-28T23:01:00.506240997+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T23:01:04+05:30"}
+{"time":"2025-12-28T23:01:00.506260548+05:30","level":"INFO","msg":"Dispatching qualified devices","component":"Scheduler","count":2}
+{"time":"2025-12-28T23:01:00.507698512+05:30","level":"INFO","msg":"Received devices from scheduler","component":"Poller","count":2}
+{"time":"2025-12-28T23:01:05.503087852+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T23:01:09+05:30"}
+{"time":"2025-12-28T23:01:05.50316865+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T23:01:09+05:30"}
+{"time":"2025-12-28T23:01:05.503184024+05:30","level":"INFO","msg":"Dispatching qualified devices","component":"Scheduler","count":2}
+{"time":"2025-12-28T23:01:05.503200568+05:30","level":"INFO","msg":"Received devices from scheduler","component":"Poller","count":2}
+{"time":"2025-12-28T23:01:10.50215966+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T23:01:14+05:30"}
+{"time":"2025-12-28T23:01:10.502222803+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T23:01:14+05:30"}
+{"time":"2025-12-28T23:01:10.502232309+05:30","level":"INFO","msg":"Dispatching qualified devices","component":"Scheduler","count":2}
+{"time":"2025-12-28T23:01:10.502245806+05:30","level":"INFO","msg":"Received devices from scheduler","component":"Poller","count":2}
+{"time":"2025-12-28T23:01:15.504242467+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T23:01:19+05:30"}
+{"time":"2025-12-28T23:01:15.504315321+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T23:01:19+05:30"}
+{"time":"2025-12-28T23:01:15.504332068+05:30","level":"INFO","msg":"Dispatching qualified devices","component":"Scheduler","count":2}
+{"time":"2025-12-28T23:01:15.504353196+05:30","level":"INFO","msg":"Received devices from scheduler","component":"Poller","count":2}
+{"time":"2025-12-28T23:01:20.503129102+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T23:01:24+05:30"}
+{"time":"2025-12-28T23:01:20.503178671+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T23:01:24+05:30"}
+{"time":"2025-12-28T23:01:20.503188213+05:30","level":"INFO","msg":"Dispatching qualified devices","component":"Scheduler","count":2}
+{"time":"2025-12-28T23:01:20.503215546+05:30","level":"INFO","msg":"Received devices from scheduler","component":"Poller","count":2}
+{"time":"2025-12-28T23:01:25.504152484+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T23:01:29+05:30"}
+{"time":"2025-12-28T23:01:25.504218285+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T23:01:29+05:30"}
+{"time":"2025-12-28T23:01:25.504225751+05:30","level":"INFO","msg":"Dispatching qualified devices","component":"Scheduler","count":2}
+{"time":"2025-12-28T23:01:25.504240627+05:30","level":"INFO","msg":"Received devices from scheduler","component":"Poller","count":2}
+{"time":"2025-12-28T23:01:30.504194334+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T23:01:34+05:30"}
+{"time":"2025-12-28T23:01:30.504266927+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T23:01:34+05:30"}
+{"time":"2025-12-28T23:01:30.504282928+05:30","level":"INFO","msg":"Dispatching qualified devices","component":"Scheduler","count":2}
+{"time":"2025-12-28T23:01:30.504300985+05:30","level":"INFO","msg":"Received devices from scheduler","component":"Poller","count":2}
+{"time":"2025-12-28T23:01:35.504290924+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T23:01:39+05:30"}
+{"time":"2025-12-28T23:01:35.504351134+05:30","level":"INFO","msg":"Device qualified (ping skipped)","component":"Scheduler","device_id":3,"next_deadline":"2025-12-28T23:01:39+05:30"}
+{"time":"2025-12-28T23:01:35.504362694+05:30","level":"INFO","msg":"Dispatching qualified devices","component":"Scheduler","count":2}
+{"time":"2025-12-28T23:01:35.504376805+05:30","level":"INFO","msg":"Received devices from scheduler","component":"Poller","count":2}
+{"time":"2025-12-28T23:01:36.034218664+05:30","level":"INFO","msg":"Stopping metrics reader","component":"MetricsReader"}
+{"time":"2025-12-28T23:01:36.034366471+05:30","level":"INFO","msg":"Context cancelled, shutting down","component":"Poller"}
+{"time":"2025-12-28T23:01:36.034393606+05:30","level":"INFO","msg":"Stopping entity writer","component":"EntityService"}
+{"time":"2025-12-28T23:01:36.034426746+05:30","level":"INFO","msg":"Context cancelled, shutting down","component":"Scheduler"}
+{"time":"2025-12-28T23:01:36.03444566+05:30","level":"INFO","msg":"Stopping metrics writer","component":"MetricsWriter"}
+{"time":"2025-12-28T23:01:36.034472561+05:30","level":"INFO","msg":"Worker stopping","component":"PollPool","worker_id":9}
+{"time":"2025-12-28T23:01:36.034492081+05:30","level":"INFO","msg":"Worker stopping","component":"PollPool","worker_id":7}
+{"time":"2025-12-28T23:01:36.034507254+05:30","level":"INFO","msg":"Worker stopping","component":"PollPool","worker_id":5}
+{"time":"2025-12-28T23:01:36.03453248+05:30","level":"INFO","msg":"Worker stopping","component":"PollPool","worker_id":8}
+{"time":"2025-12-28T23:01:36.034555294+05:30","level":"INFO","msg":"Worker stopping","component":"PollPool","worker_id":3}
+{"time":"2025-12-28T23:01:36.034576894+05:30","level":"INFO","msg":"Worker stopping","component":"PollPool","worker_id":2}
+{"time":"2025-12-28T23:01:36.034599853+05:30","level":"INFO","msg":"Worker stopping","component":"PollPool","worker_id":1}
+{"time":"2025-12-28T23:01:36.034622118+05:30","level":"INFO","msg":"Worker stopping","component":"PollPool","worker_id":4}
+{"time":"2025-12-28T23:01:36.034642517+05:30","level":"INFO","msg":"Worker stopping","component":"PollPool","worker_id":6}
+{"time":"2025-12-28T23:01:36.034663858+05:30","level":"INFO","msg":"Stopping health monitor","component":"HealthMonitor"}
+{"time":"2025-12-28T23:01:36.034689953+05:30","level":"INFO","msg":"Worker stopping","component":"DiscoveryPool","worker_id":2}
+{"time":"2025-12-28T23:01:36.034733557+05:30","level":"INFO","msg":"Stopping discovery service","component":"DiscoveryService"}
+{"time":"2025-12-28T23:01:36.034758338+05:30","level":"INFO","msg":"Worker stopping","component":"DiscoveryPool","worker_id":3}
+{"time":"2025-12-28T23:01:36.034779092+05:30","level":"INFO","msg":"Worker stopping","component":"DiscoveryPool","worker_id":1}
+{"time":"2025-12-28T23:01:36.034798404+05:30","level":"INFO","msg":"Worker stopping","component":"DiscoveryPool","worker_id":4}
+{"time":"2025-12-28T23:01:36.034818293+05:30","level":"INFO","msg":"Worker stopping","component":"DiscoveryPool","worker_id":0}
+{"time":"2025-12-28T23:01:36.034846833+05:30","level":"INFO","msg":"All workers stopped","component":"DiscoveryPool"}
+{"time":"2025-12-28T23:01:36.034874673+05:30","level":"INFO","msg":"Shutdown signal received, stopping services..."}
+{"time":"2025-12-28T23:01:36.035019852+05:30","level":"INFO","msg":"Graceful shutdown complete"}

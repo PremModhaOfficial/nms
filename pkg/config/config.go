@@ -48,10 +48,25 @@ type Config struct {
 	MetricsDefaultLimit         int `mapstructure:"METRICS_DEFAULT_LIMIT"`
 	MetricsDefaultLookbackHours int `mapstructure:"METRICS_DEFAULT_LOOKBACK_HOURS"`
 
-	// Connection Pool Settings
+	// Connection Pool Settings (main GORM pool)
 	DBMaxOpenConns    int `mapstructure:"DB_MAX_OPEN_CONNS"`
 	DBMaxIdleConns    int `mapstructure:"DB_MAX_IDLE_CONNS"`
 	DBConnMaxLifeMins int `mapstructure:"DB_CONN_MAX_LIFE_MINS"`
+
+	// Metrics Writer Pool (high-volume polling writes)
+	MetricsWriterMaxOpen int `mapstructure:"METRICS_WRITER_MAX_OPEN"`
+	MetricsWriterMaxIdle int `mapstructure:"METRICS_WRITER_MAX_IDLE"`
+
+	// Metrics Reader Pool (API queries)
+	MetricsReaderMaxOpen int `mapstructure:"METRICS_READER_MAX_OPEN"`
+	MetricsReaderMaxIdle int `mapstructure:"METRICS_READER_MAX_IDLE"`
+
+	// Health Monitor
+	FailureWindowMin int `mapstructure:"FAILURE_WINDOW_MIN"` // Time window for failure counting (minutes)
+	FailureThreshold int `mapstructure:"FAILURE_THRESHOLD"`  // Number of failures to trigger deactivation
+
+	// Metrics Service Worker Pool
+	MetricsWorkerCount int `mapstructure:"METRICS_WORKER_COUNT"`
 }
 
 // LoadConfig reads configuration from file or environment variables.
@@ -67,7 +82,7 @@ func LoadConfig(path string) (*Config, error) {
 	v.SetDefault("PLUGINS_DIR", "plugins")
 	v.SetDefault("POLL_WORKER_COUNT", 5)
 	v.SetDefault("DISC_WORKER_COUNT", 3)
-	v.SetDefault("POLL_INTERVAL_SEC", 5)
+	v.SetDefault("POLL_INTERVAL_SEC", 30)
 	v.SetDefault("AV_CHECK_TIMEOUT_MS", 500)
 	v.SetDefault("AV_CHECK_RETRIES", 2)
 	v.SetDefault("JWT_SECRET", "default-insecure-secret-change-me")
@@ -80,6 +95,13 @@ func LoadConfig(path string) (*Config, error) {
 	v.SetDefault("DB_MAX_OPEN_CONNS", 25)
 	v.SetDefault("DB_MAX_IDLE_CONNS", 10)
 	v.SetDefault("DB_CONN_MAX_LIFE_MINS", 30)
+	v.SetDefault("METRICS_WRITER_MAX_OPEN", 10)
+	v.SetDefault("METRICS_WRITER_MAX_IDLE", 5)
+	v.SetDefault("METRICS_READER_MAX_OPEN", 5)
+	v.SetDefault("METRICS_READER_MAX_IDLE", 2)
+	v.SetDefault("FAILURE_WINDOW_MIN", 3)
+	v.SetDefault("FAILURE_THRESHOLD", 3)
+	v.SetDefault("METRICS_WORKER_COUNT", 4)
 
 	// 2. Read app.yaml for non-sensitive configuration
 	v.AddConfigPath(path)
@@ -100,6 +122,11 @@ func LoadConfig(path string) (*Config, error) {
 	var config Config
 	if err := v.Unmarshal(&config); err != nil {
 		return nil, err
+	}
+
+	// Validate scheduler tick interval
+	if config.PollIntervalSec < 20 {
+		return nil, errors.New("POLL_INTERVAL_SEC must be at least 20 seconds")
 	}
 
 	return &config, nil

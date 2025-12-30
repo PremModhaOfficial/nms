@@ -9,19 +9,21 @@ import (
 	"syscall"
 	"time"
 
+	"nms/pkg/Services/discovery"
+	"nms/pkg/Services/monitorFailure"
+	"nms/pkg/Services/persistence"
+	"nms/pkg/Services/polling"
+	"nms/pkg/Services/scheduling"
+
 	"nms/pkg/config"
 
 	"nms/pkg/api"
 	"nms/pkg/database"
-	"nms/pkg/discovery"
 	"nms/pkg/models"
-	"nms/pkg/persistence"
 	"nms/pkg/plugin"
-	"nms/pkg/polling"
-	"nms/pkg/scheduling"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
+	"github.com/jmoiron/sqlx"
 )
 
 // services holds background workers that process events
@@ -31,6 +33,7 @@ type services struct {
 	discService    *discovery.DiscoveryService
 	metricsService *persistence.MetricsService
 	entityService  *persistence.EntityService
+	failureService *monitorFailure.FailureService
 }
 
 // apiChannels holds request channels used by API handlers
@@ -132,7 +135,7 @@ func loadConfig() *config.Config {
 	return conf
 }
 
-func initDatabase(conf *config.Config) *gorm.DB {
+func initDatabase(conf *config.Config) *sqlx.DB {
 	db, err := database.Connect(conf)
 	if err != nil {
 		slog.Error("Failed to connect to database", "error", err)
@@ -141,16 +144,16 @@ func initDatabase(conf *config.Config) *gorm.DB {
 	return db
 }
 
-func initServices(conf *config.Config, db *gorm.DB, fpingPath string) (*services, *apiChannels) {
+func initServices(conf *config.Config, db *sqlx.DB, fpingPath string) (*services, *apiChannels) {
 	// ══════════════════════════════════════════════════════════════
 	// COMMUNICATION CHANNELS - One per topic
 	// ══════════════════════════════════════════════════════════════
 	deviceChan := make(chan models.Event, EventBufferSize)
-	credentialChan := make(chan models.Event, EventBufferSize)
 	discProfileChan := make(chan models.Event, EventBufferSize)
 	discResultChan := make(chan plugin.Result, EventBufferSize)
 	pollResultChan := make(chan []plugin.Result, DataBufferSize)
 	schedulerToPollerChan := make(chan []*models.Device, ControlBufferSize)
+	failureChan := make(chan models.Event, EventBufferSize) // Shared by Scheduler + MetricsWriter
 
 	crudRequestChan := make(chan models.Request, EventBufferSize)
 	metricRequestChan := make(chan models.Request, EventBufferSize)
@@ -168,7 +171,6 @@ func initServices(conf *config.Config, db *gorm.DB, fpingPath string) (*services
 		db,
 		discProfileChan,
 		deviceChan,
-		credentialChan,
 	)
 
 	// Scheduler uses crudRequestChan to request devices from EntityService
@@ -176,6 +178,7 @@ func initServices(conf *config.Config, db *gorm.DB, fpingPath string) (*services
 		deviceChan,
 		crudRequestChan,
 		schedulerToPollerChan,
+		failureChan,
 		fpingPath,
 		conf.PollIntervalSec,
 		conf.AvCheckTimeoutMs,
@@ -193,10 +196,32 @@ func initServices(conf *config.Config, db *gorm.DB, fpingPath string) (*services
 		pollResultChan,
 	)
 
+	// Create separate DB pools for metrics components
+	metricsWriteDB, err := database.ConnectRaw(
+		conf, "MetricsWrite",
+		conf.MetricsWriterMaxOpen, conf.MetricsWriterMaxIdle,
+	)
+	if err != nil {
+		slog.Error("Failed to create MetricsWrite DB pool", "error", err)
+		os.Exit(1)
+	}
+
+	metricsReadDB, err := database.ConnectRaw(
+		conf, "MetricsRead",
+		conf.MetricsReaderMaxOpen, conf.MetricsReaderMaxIdle,
+	)
+	if err != nil {
+		slog.Error("Failed to create MetricsRead DB pool", "error", err)
+		os.Exit(1)
+	}
+
 	metricsService := persistence.NewMetricsService(
 		pollResultChan,
 		metricRequestChan,
-		db,
+		metricsWriteDB,
+		metricsReadDB,
+		conf.MetricsWorkerCount,
+		failureChan,
 		conf.MetricsDefaultLimit,
 		conf.MetricsDefaultLookbackHours,
 	)
@@ -210,12 +235,21 @@ func initServices(conf *config.Config, db *gorm.DB, fpingPath string) (*services
 		EventBufferSize,
 	)
 
+	// FailureService tracks failures and deactivates devices
+	healthMonitor := monitorFailure.NewHealthMonitor(
+		failureChan,
+		crudRequestChan,
+		conf.FailureWindowMin,
+		conf.FailureThreshold,
+	)
+
 	svc := &services{
 		sched:          sched,
 		poll:           poll,
 		discService:    discService,
 		metricsService: metricsService,
 		entityService:  entityService,
+		failureService: healthMonitor,
 	}
 
 	channels := &apiChannels{
@@ -246,6 +280,7 @@ func startServices(ctx context.Context, svc *services) {
 	go svc.discService.Start(ctx)
 	go svc.metricsService.Run(ctx)
 	go svc.entityService.Run(ctx)
+	go svc.failureService.Run(ctx)
 }
 
 func initRouter(conf *config.Config, auth *api.JwtAuth, channels *apiChannels) *gin.Engine {
@@ -265,7 +300,7 @@ func initRouter(conf *config.Config, auth *api.JwtAuth, channels *apiChannels) *
 		api.RegisterMetricsRoute(apiGroup, channels.metricRequest)
 
 		apiGroup.POST("/discovery_profiles/:id/run", api.RunDiscoveryHandler(channels.provisioningEvent))
-		apiGroup.POST("/devices/:id/activate", api.ActivateDeviceHandler(channels.provisioningEvent))
+		apiGroup.POST("/devices/:id/provision", api.ProvisionDeviceHandler(channels.provisioningEvent))
 	}
 
 	return router

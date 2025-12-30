@@ -35,11 +35,11 @@ func RunDiscoveryHandler(eventChan chan<- models.Event) gin.HandlerFunc {
 
 // ProvisionRequest represents the request body for device activation
 type ProvisionRequest struct {
-	PollingIntervalSeconds int `json:"polling_interval_seconds" binding:"required,min=1"`
+	PollingIntervalSeconds int `json:"polling_interval_seconds" binding:"required,min=60,max=3600"`
 }
 
-// ActivateDeviceHandler publishes a command event to activate a discovered device (zero repo deps)
-func ActivateDeviceHandler(provisionCh chan<- models.Event) gin.HandlerFunc {
+// ProvisionDeviceHandler publishes a command event to provision a discovered device (zero repo deps)
+func ProvisionDeviceHandler(provisionCh chan<- models.Event) gin.HandlerFunc {
 	return func(context *gin.Context) {
 		id, err := strconv.ParseInt(context.Param("id"), 10, 64)
 		if err != nil {
@@ -56,15 +56,15 @@ func ActivateDeviceHandler(provisionCh chan<- models.Event) gin.HandlerFunc {
 
 		// Publish command event
 		provisionCh <- models.Event{
-			Type: models.EventActivateDevice,
-			Payload: &models.DeviceActivateEvent{
+			Type: models.EventProvisionDevice,
+			Payload: &models.DeviceProvisionEvent{
 				DeviceID:               id,
 				PollingIntervalSeconds: req.PollingIntervalSeconds,
 			},
 		}
 
 		context.JSON(http.StatusAccepted, gin.H{
-			"message":   "device activation queued",
+			"message":   "device provisioning queued",
 			"device_id": id,
 		})
 	}

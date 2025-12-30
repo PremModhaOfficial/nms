@@ -24,6 +24,7 @@ type Scheduler struct {
 	// Channels - received from outside for event-driven communication
 	deviceEvents <-chan models.Event     // Device create/update events (to add to queue)
 	OutputChan   chan<- []*models.Device // Sends qualified devices to poller
+	FailureChan  chan<- models.Event     // Sends failure events to HealthMonitor
 
 	// Config
 	fpingPath    string
@@ -37,6 +38,7 @@ func NewScheduler(
 	deviceEvents <-chan models.Event,
 	entityReqChan chan<- models.Request,
 	outputChan chan<- []*models.Device,
+	failureChan chan<- models.Event,
 	fpingPath string,
 	tickIntervalSec, fpingTimeoutMs, fpingRetries int,
 ) *Scheduler {
@@ -45,6 +47,7 @@ func NewScheduler(
 		entityReqChan: entityReqChan,
 		deviceEvents:  deviceEvents,
 		OutputChan:    outputChan,
+		FailureChan:   failureChan,
 		fpingPath:     fpingPath,
 		tickInterval:  time.Duration(tickIntervalSec) * time.Second,
 		fpingTimeout:  fpingTimeoutMs,
@@ -185,6 +188,15 @@ func (sched *Scheduler) schedule() {
 			slog.Info("Device qualified (ping OK)", "component", "Scheduler", "device_id", dev.ID, "next_deadline", newDeadline.Format(time.RFC3339))
 		} else {
 			slog.Debug("Device not reachable", "component", "Scheduler", "device_id", dev.ID, "ip", dev.IPAddress)
+			// Emit failure event to HealthMonitor
+			sched.FailureChan <- models.Event{
+				Type: models.EventDeviceFailure,
+				Payload: &models.DeviceFailureEvent{
+					DeviceID:  dev.ID,
+					Timestamp: time.Now(),
+					Reason:    "ping",
+				},
+			}
 		}
 
 		// Collect for batch re-add

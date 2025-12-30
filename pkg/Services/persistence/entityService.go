@@ -4,13 +4,14 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 
 	"nms/pkg/database"
 	"nms/pkg/models"
 	"nms/pkg/plugin"
 
-	"gorm.io/gorm"
+	"github.com/jmoiron/sqlx"
 )
 
 // sendEvent sends an event to a channel without blocking.
@@ -38,7 +39,6 @@ type EntityService struct {
 	// Event publishing channels
 	discoveryProfileEvents chan<- models.Event
 	deviceEvents           chan<- models.Event
-	credentialEvents       chan<- models.Event
 
 	// In-memory caches for fast lookups (no DB round-trips)
 	deviceCache     map[int64]*models.Device
@@ -51,21 +51,19 @@ func NewEntityService(
 	discoveryResults <-chan plugin.Result,
 	eventsChan <-chan models.Event,
 	requests <-chan models.Request,
-	db *gorm.DB,
+	db *sqlx.DB,
 	discoveryProfileEvents chan<- models.Event,
 	deviceEvents chan<- models.Event,
-	credentialEvents chan<- models.Event,
 ) *EntityService {
 	return &EntityService{
 		discoveryResultsChan:   discoveryResults,
 		eventsChan:             eventsChan,
 		requestsChan:           requests,
-		credentialRepo:         database.NewGormRepository[models.CredentialProfile](db),
-		deviceRepo:             database.NewGormRepository[models.Device](db),
-		discoveryProfileRepo:   database.NewGormRepository[models.DiscoveryProfile](db),
+		credentialRepo:         database.NewSqlxRepository[models.CredentialProfile](db),
+		deviceRepo:             database.NewSqlxRepository[models.Device](db),
+		discoveryProfileRepo:   database.NewSqlxRepository[models.DiscoveryProfile](db),
 		discoveryProfileEvents: discoveryProfileEvents,
 		deviceEvents:           deviceEvents,
-		credentialEvents:       credentialEvents,
 		deviceCache:            make(map[int64]*models.Device),
 		credentialCache:        make(map[int64]*models.CredentialProfile),
 	}
@@ -135,6 +133,11 @@ func (writer *EntityService) provisionFromDiscovery(ctx context.Context, result 
 
 	createdDevice, err := writer.deviceRepo.Create(ctx, &device)
 	if err != nil {
+		// Handle race condition: check if error is due to unique constraint (IP + Port)
+		if strings.Contains(err.Error(), "unique constraint") || strings.Contains(err.Error(), "duplicate key") {
+			slog.Debug("Device already exists (caught by DB constraint)", "component", "EntityService", "target", result.Target, "port", result.Port)
+			return
+		}
 		slog.Error("Failed to create device", "component", "EntityService", "target", result.Target, "error", err)
 		return
 	}
@@ -159,8 +162,8 @@ func (writer *EntityService) handleEvent(ctx context.Context, event models.Event
 	switch event.Type {
 	case models.EventTriggerDiscovery:
 		writer.triggerDiscovery(ctx, event)
-	case models.EventActivateDevice:
-		writer.activateDevice(ctx, event)
+	case models.EventProvisionDevice:
+		writer.provisionDevice(ctx, event)
 	default:
 		slog.Error("Ignoring unknown command type", "component", "EntityService", "type", event.Type)
 	}
@@ -193,11 +196,11 @@ func (writer *EntityService) triggerDiscovery(ctx context.Context, event models.
 	slog.Info("Triggered discovery for profile", "component", "EntityService", "profile_id", cmd.DiscoveryProfileID)
 }
 
-// activateDevice activates a discovered device and sets its polling interval.
-func (writer *EntityService) activateDevice(ctx context.Context, event models.Event) {
-	cmd, ok := event.Payload.(*models.DeviceActivateEvent)
+// provisionDevice provisions a discovered device and sets its polling interval.
+func (writer *EntityService) provisionDevice(ctx context.Context, event models.Event) {
+	cmd, ok := event.Payload.(*models.DeviceProvisionEvent)
 	if !ok {
-		slog.Error("Invalid payload for EventActivateDevice", "component", "EntityService")
+		slog.Error("Invalid payload for EventProvisionDevice", "component", "EntityService")
 		return
 	}
 
@@ -227,11 +230,11 @@ func (writer *EntityService) activateDevice(ctx context.Context, event models.Ev
 		Payload: updatedDevice,
 	})
 
-	slog.Info("Activated device", "component", "EntityService", "device_id", cmd.DeviceID)
+	slog.Info("Provisioned device", "component", "EntityService", "device_id", cmd.DeviceID)
 }
 
 // handleCRUD is a generic CRUD handler that works with any repository type.
-func handleCRUD[T any](
+func handleCRUD[T models.TableNamer](
 	ctx context.Context,
 	req models.Request,
 	repo database.Repository[T],
@@ -361,6 +364,8 @@ func (writer *EntityService) handleCrudRequest(ctx context.Context, req models.R
 		resp = writer.handleGetBatch(req)
 	case models.OpGetCredential:
 		resp = writer.handleGetCredential(req)
+	case models.OpDeactivateDevice:
+		resp = writer.handleDeactivateDevice(ctx, req.ID)
 	default:
 		// Standard CRUD operations
 		switch req.EntityType {
@@ -380,7 +385,16 @@ func (writer *EntityService) handleCrudRequest(ctx context.Context, req models.R
 
 // handleCredentialCRUD handles CRUD for credentials and updates cache
 func (writer *EntityService) handleCredentialCRUD(ctx context.Context, req models.Request) models.Response {
-	resp := handleCRUD(ctx, req, writer.credentialRepo, writer.credentialEvents)
+	// Validate name is not whitespace-only
+	if req.Operation == models.OpCreate || req.Operation == models.OpUpdate {
+		if cred, ok := req.Payload.(*models.CredentialProfile); ok {
+			if strings.TrimSpace(cred.Name) == "" {
+				return models.Response{Error: fmt.Errorf("name cannot be empty or whitespace-only")}
+			}
+		}
+	}
+
+	resp := handleCRUD(ctx, req, writer.credentialRepo, nil) // No event channel - credentials don't need broadcast
 	if resp.Error == nil {
 		writer.updateCredentialCache(req.Operation, resp.Data)
 	}
@@ -389,6 +403,30 @@ func (writer *EntityService) handleCredentialCRUD(ctx context.Context, req model
 
 // handleDeviceCRUD handles CRUD for devices and updates cache
 func (writer *EntityService) handleDeviceCRUD(ctx context.Context, req models.Request) models.Response {
+	if device, ok := req.Payload.(*models.Device); ok {
+		switch req.Operation {
+		case models.OpCreate:
+			// Require valid profile IDs on create
+			if device.CredentialProfileID < 1 {
+				return models.Response{Error: fmt.Errorf("credential_profile_id is required and must be >= 1")}
+			}
+			if device.DiscoveryProfileID < 1 {
+				return models.Response{Error: fmt.Errorf("discovery_profile_id is required and must be >= 1")}
+			}
+			if strings.TrimSpace(device.IPAddress) == "" {
+				return models.Response{Error: fmt.Errorf("ip_address is required")}
+			}
+			if strings.TrimSpace(device.PluginID) == "" {
+				return models.Response{Error: fmt.Errorf("plugin_id is required")}
+			}
+		case models.OpUpdate:
+			// Fail-fast: credential_profile_id and discovery_profile_id are immutable
+			if device.CredentialProfileID != 0 || device.DiscoveryProfileID != 0 {
+				return models.Response{Error: fmt.Errorf("credential_profile_id and discovery_profile_id are immutable after creation")}
+			}
+		}
+	}
+
 	resp := handleCRUD(ctx, req, writer.deviceRepo, writer.deviceEvents)
 	if resp.Error == nil {
 		writer.updateDeviceCache(req.Operation, resp.Data)
@@ -527,4 +565,32 @@ func (writer *EntityService) handleGetCredential(req models.Request) models.Resp
 		}
 	}
 	return models.Response{Data: cred}
+}
+
+// handleDeactivateDevice deactivates a device by setting its status to inactive.
+// Called by HealthMonitor when failure threshold is exceeded.
+func (writer *EntityService) handleDeactivateDevice(ctx context.Context, deviceID int64) models.Response {
+	device, err := writer.deviceRepo.Get(ctx, deviceID)
+	if err != nil {
+		return models.Response{Error: fmt.Errorf("device %d not found: %w", deviceID, err)}
+	}
+
+	// Update device status to inactive
+	device.Status = "inactive"
+	updatedDevice, err := writer.deviceRepo.Update(ctx, deviceID, device)
+	if err != nil {
+		return models.Response{Error: fmt.Errorf("failed to deactivate device %d: %w", deviceID, err)}
+	}
+
+	// Update cache with deactivated device
+	writer.updateDeviceCache(models.OpUpdate, updatedDevice)
+
+	// Publish event for cache invalidation in Scheduler
+	go sendEvent(writer.deviceEvents, models.Event{
+		Type:    models.EventUpdate,
+		Payload: updatedDevice,
+	})
+
+	slog.Info("Device deactivated", "component", "EntityService", "device_id", deviceID)
+	return models.Response{Data: updatedDevice}
 }
