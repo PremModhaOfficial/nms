@@ -102,7 +102,11 @@ func (poller *Poller) Run(ctx context.Context) {
 			slog.Info("Context cancelled, shutting down", "component", "Poller")
 			return
 
-		case devices := <-poller.InputChan:
+		case devices, ok := <-poller.InputChan:
+			if !ok {
+				slog.Info("Input channel closed, shutting down", "component", "Poller")
+				return
+			}
 			slog.Info("Received devices from scheduler", "component", "Poller", "count", len(devices))
 
 			// Group devices by PluginID
@@ -116,8 +120,10 @@ func (poller *Poller) Run(ctx context.Context) {
 					continue
 				}
 
-				tasks := poller.createTasks(deviceList)
-				poller.pool.Submit(binPath, tasks)
+				tasks := poller.createTasks(ctx, deviceList)
+				if !poller.pool.Submit(binPath, tasks) {
+					slog.Warn("Failed to submit poll batch: pool shutting down", "component", "Poller", "plugin_id", pluginID)
+				}
 			}
 		}
 	}
@@ -133,15 +139,19 @@ func (poller *Poller) groupByProtocol(devices []*models.Device) map[string][]*mo
 }
 
 // getCredential fetches a credential from EntityService cache.
-func (poller *Poller) getCredential(profileID int64) *models.CredentialProfile {
+// The request-reply exchange is bounded by ctx and models.RPCTimeout so a
+// stalled EntityService cannot wedge the poll pipeline forever.
+func (poller *Poller) getCredential(ctx context.Context, profileID int64) *models.CredentialProfile {
 	replyCh := make(chan models.Response, 1)
-	poller.entityReqChan <- models.Request{
+	resp, err := models.Call(ctx, poller.entityReqChan, models.Request{
 		Operation: models.OpGetCredential,
 		ID:        profileID,
 		ReplyCh:   replyCh,
+	})
+	if err != nil {
+		slog.Error("Failed to get credential", "component", "Poller", "profile_id", profileID, "error", err)
+		return nil
 	}
-
-	resp := <-replyCh
 	if resp.Error != nil {
 		slog.Error("Failed to get credential", "component", "Poller", "profile_id", profileID, "error", resp.Error)
 		return nil
@@ -156,17 +166,22 @@ func (poller *Poller) getCredential(profileID int64) *models.CredentialProfile {
 }
 
 // createTasks converts devices to plugin.Task, fetching credentials from EntityService.
-func (poller *Poller) createTasks(devices []*models.Device) []plugin.Task {
+func (poller *Poller) createTasks(ctx context.Context, devices []*models.Device) []plugin.Task {
 	tasks := make([]plugin.Task, 0, len(devices))
 
 	// Cache credentials by profile ID to avoid duplicate requests
 	credCache := make(map[int64]*models.CredentialProfile)
 
 	for _, d := range devices {
+		// Stop building tasks once shutdown starts; the pool rejects work anyway.
+		if ctx.Err() != nil {
+			return tasks
+		}
+
 		// Get credential from cache or fetch from EntityService
 		cred, exists := credCache[d.CredentialProfileID]
 		if !exists {
-			cred = poller.getCredential(d.CredentialProfileID)
+			cred = poller.getCredential(ctx, d.CredentialProfileID)
 			credCache[d.CredentialProfileID] = cred
 		}
 
@@ -198,8 +213,14 @@ func (poller *Poller) collectResults(ctx context.Context) {
 			if !ok {
 				return
 			}
-			if len(results) > 0 {
-				poller.OutputChan <- results
+			if len(results) == 0 {
+				continue
+			}
+			// Bound the forward: never wedge shutdown on a stalled consumer.
+			select {
+			case <-ctx.Done():
+				return
+			case poller.OutputChan <- results:
 			}
 		}
 	}

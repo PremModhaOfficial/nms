@@ -81,7 +81,7 @@ func (sched *Scheduler) Run(ctx context.Context) {
 
 		case <-ticker.C:
 			slog.Debug("Tick - running schedule()", "component", "Scheduler")
-			sched.schedule()
+			sched.schedule(ctx)
 		}
 	}
 }
@@ -113,7 +113,7 @@ func (sched *Scheduler) processDeviceEvent(event models.Event) {
 
 // schedule pops expired entries, fetches device details from EntityService,
 // performs fping, and dispatches qualified devices to Poller.
-func (sched *Scheduler) schedule() {
+func (sched *Scheduler) schedule(ctx context.Context) {
 	now := time.Now()
 	slog.Debug("Checking deadlines", "component", "Scheduler", "now", now.Format(time.RFC3339), "queue_size", sched.queue.Len())
 
@@ -134,15 +134,23 @@ func (sched *Scheduler) schedule() {
 
 	slog.Debug("Expired entries popped", "component", "Scheduler", "count", len(deviceIDs))
 
-	// 2. Request device details from EntityService
+	// 2. Request device details from EntityService. The reply is delivered on
+	// sched.entityReqChan (a shared input to EntityService), so sending is not
+	// itself blocking; the bounded wait for the reply is handled by models.Call.
 	replyCh := make(chan models.Response, 1)
-	sched.entityReqChan <- models.Request{
+	resp, err := models.Call(ctx, sched.entityReqChan, models.Request{
 		Operation: models.OpGetBatch,
 		IDs:       deviceIDs,
 		ReplyCh:   replyCh,
+	})
+	if err != nil {
+		slog.Warn("Failed to get devices from EntityService", "component", "Scheduler", "error", err)
+		// Re-add entries back to queue to retry later
+		for _, entry := range expired {
+			sched.queue.PushEntry(entry.DeviceID, entry.Deadline.Add(sched.tickInterval))
+		}
+		return
 	}
-
-	resp := <-replyCh
 	if resp.Error != nil {
 		slog.Error("Failed to get devices from EntityService", "component", "Scheduler", "error", resp.Error)
 		// Re-add entries back to queue to retry later
@@ -188,14 +196,19 @@ func (sched *Scheduler) schedule() {
 			slog.Info("Device qualified (ping OK)", "component", "Scheduler", "device_id", dev.ID, "next_deadline", newDeadline.Format(time.RFC3339))
 		} else {
 			slog.Debug("Device not reachable", "component", "Scheduler", "device_id", dev.ID, "ip", dev.IPAddress)
-			// Emit failure event to HealthMonitor
-			sched.FailureChan <- models.Event{
+			// Emit failure event to HealthMonitor. Guarded so a stopped
+			// consumer cannot wedge the scheduler during shutdown.
+			select {
+			case <-ctx.Done():
+				return
+			case sched.FailureChan <- models.Event{
 				Type: models.EventDeviceFailure,
 				Payload: &models.DeviceFailureEvent{
 					DeviceID:  dev.ID,
 					Timestamp: time.Now(),
 					Reason:    "ping",
 				},
+			}:
 			}
 		}
 
@@ -223,7 +236,12 @@ func (sched *Scheduler) schedule() {
 	// 7. Dispatch qualified list to OutputChan
 	if len(qualified) > 0 {
 		slog.Info("Dispatching qualified devices", "component", "Scheduler", "count", len(qualified))
-		sched.OutputChan <- qualified
+		// Guarded so a stopped Poller cannot wedge the scheduler during shutdown.
+		select {
+		case <-ctx.Done():
+			return
+		case sched.OutputChan <- qualified:
+		}
 	} else {
 		slog.Debug("No devices qualified", "component", "Scheduler")
 	}

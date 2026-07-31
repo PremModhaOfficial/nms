@@ -9,7 +9,7 @@ Follow these steps to set up and run the NMS on a new machine.
 
 ### Prerequisites
 
-- **Go:** 1.21 or higher
+- **Go:** 1.25 or higher (the module targets `go 1.25.5`)
 - **PostgreSQL:** Ensure you have a running instance.
 - **Python 3:** For database seeding (optional).
 - **Make:** For using the automation commands.

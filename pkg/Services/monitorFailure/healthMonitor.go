@@ -49,19 +49,23 @@ func (failService *FailureService) Run(ctx context.Context) {
 		case <-ctx.Done():
 			slog.Info("Stopping health monitor", "component", "FailureService")
 			return
-		case event := <-failService.failureChan:
+		case event, ok := <-failService.failureChan:
+			if !ok {
+				slog.Info("Failure channel closed, stopping health monitor", "component", "FailureService")
+				return
+			}
 			if event.Type != models.EventDeviceFailure {
 				continue // Ignore non-failure events
 			}
 			if payload, ok := event.Payload.(*models.DeviceFailureEvent); ok {
-				failService.handleFailure(payload)
+				failService.handleFailure(ctx, payload)
 			}
 		}
 	}
 }
 
 // handleFailure processes a failure event and updates the failure count.
-func (failService *FailureService) handleFailure(event *models.DeviceFailureEvent) {
+func (failService *FailureService) handleFailure(ctx context.Context, event *models.DeviceFailureEvent) {
 	record := failService.failures[event.DeviceID]
 
 	if event.Timestamp.Sub(record.LastTime) < failService.window {
@@ -81,7 +85,7 @@ func (failService *FailureService) handleFailure(event *models.DeviceFailureEven
 				"device_id", event.DeviceID,
 				"count", record.Count,
 			)
-			failService.deactivateDevice(event.DeviceID)
+			failService.deactivateDevice(ctx, event.DeviceID)
 			delete(failService.failures, event.DeviceID) // Clean up after deactivation
 			return
 		}
@@ -100,29 +104,33 @@ func (failService *FailureService) handleFailure(event *models.DeviceFailureEven
 }
 
 // deactivateDevice sends a deactivation request to EntityService.
-func (failService *FailureService) deactivateDevice(deviceID int64) {
+// The request-reply exchange is bounded by ctx and models.RPCTimeout so a
+// stalled EntityService cannot wedge the health monitor.
+func (failService *FailureService) deactivateDevice(ctx context.Context, deviceID int64) {
 	replyCh := make(chan models.Response, 1)
-	failService.entityReqChan <- models.Request{
+	resp, err := models.Call(ctx, failService.entityReqChan, models.Request{
 		Operation:  models.OpDeactivateDevice,
 		EntityType: "Device",
 		ID:         deviceID,
 		ReplyCh:    replyCh,
-	}
+	})
 
-	// Wait for response (non-blocking in terms of other failures)
-	go func() {
-		resp := <-replyCh
-		if resp.Error != nil {
-			slog.Error("Failed to deactivate device",
-				"component", "FailureService",
-				"device_id", deviceID,
-				"error", resp.Error,
-			)
-		} else {
-			slog.Info("Device deactivated successfully",
-				"component", "FailureService",
-				"device_id", deviceID,
-			)
-		}
-	}()
+	if err != nil {
+		slog.Error("Failed to deactivate device",
+			"component", "FailureService",
+			"device_id", deviceID,
+			"error", err,
+		)
+	} else if resp.Error != nil {
+		slog.Error("Failed to deactivate device",
+			"component", "FailureService",
+			"device_id", deviceID,
+			"error", resp.Error,
+		)
+	} else {
+		slog.Info("Device deactivated successfully",
+			"component", "FailureService",
+			"device_id", deviceID,
+		)
+	}
 }

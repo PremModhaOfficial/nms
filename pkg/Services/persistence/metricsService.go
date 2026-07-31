@@ -29,6 +29,14 @@ const (
 	jobTypeRead
 )
 
+// Explicit bounds for client-controlled inputs (defense in depth at the
+// service boundary; the API layer enforces the same limits).
+const (
+	maxDeviceIDsPerQuery = 500  // cap on device_ids in a single metrics query
+	maxMetricLimit       = 1000 // cap on LIMIT per device
+	copyFromBatchSize    = 1000 // rows per CopyFrom batch
+)
+
 // metricsJob represents a unit of work for the worker pool.
 type metricsJob struct {
 	jobType jobType
@@ -103,6 +111,9 @@ func NewMetricsService(
 	defaultLimit int,
 	defaultRangeHours int,
 ) *MetricsService {
+	if workerCount < 1 {
+		workerCount = 1
+	}
 	return &MetricsService{
 		pollResults:       pollResults,
 		queryReqs:         queryReqs,
@@ -134,15 +145,29 @@ func (s *MetricsService) Run(ctx context.Context) {
 			case <-ctx.Done():
 				close(s.jobChan)
 				return
-			case results := <-s.pollResults:
-				s.jobChan <- metricsJob{
-					jobType:      jobTypeWrite,
-					writeResults: results,
+			case results, ok := <-s.pollResults:
+				if !ok {
+					slog.Info("Poll results channel closed, stopping dispatch", "component", "MetricsService")
+					close(s.jobChan)
+					return
 				}
-			case req := <-s.queryReqs:
-				s.jobChan <- metricsJob{
-					jobType:     jobTypeRead,
-					readRequest: req,
+				job := metricsJob{jobType: jobTypeWrite, writeResults: results}
+				select {
+				case <-ctx.Done():
+					return
+				case s.jobChan <- job:
+				}
+			case req, ok := <-s.queryReqs:
+				if !ok {
+					slog.Info("Query requests channel closed, stopping dispatch", "component", "MetricsService")
+					close(s.jobChan)
+					return
+				}
+				job := metricsJob{jobType: jobTypeRead, readRequest: req}
+				select {
+				case <-ctx.Done():
+					return
+				case s.jobChan <- job:
 				}
 			}
 		}
@@ -159,12 +184,21 @@ func (s *MetricsService) worker(ctx context.Context, id int, wg *sync.WaitGroup)
 	slog.Debug("Worker started", "component", "MetricsService", "worker_id", id)
 
 	for job := range s.jobChan {
-		switch job.jobType {
-		case jobTypeWrite:
-			s.handleWrite(ctx, job.writeResults)
-		case jobTypeRead:
-			s.handleQuery(ctx, job.readRequest)
-		}
+		// Contain panics per job so one bad result/query cannot kill the
+		// worker (and hang shutdown on wg.Wait()).
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					slog.Error("panic recovered in metrics worker", "component", "MetricsService", "worker_id", id, "job_type", job.jobType, "error", r)
+				}
+			}()
+			switch job.jobType {
+			case jobTypeWrite:
+				s.handleWrite(ctx, job.writeResults)
+			case jobTypeRead:
+				s.handleQuery(ctx, job.readRequest)
+			}
+		}()
 	}
 
 	slog.Debug("Worker stopped", "component", "MetricsService", "worker_id", id)
@@ -189,14 +223,20 @@ func (s *MetricsService) handleWrite(ctx context.Context, results []plugin.Resul
 			slog.Error("Poll result error", "component", "MetricsService",
 				"device_id", result.DeviceID, "target", result.Target,
 				"port", result.Port, "error", result.Error)
-			// Emit failure event to HealthMonitor
-			s.failureChan <- models.Event{
+			// Emit failure event to HealthMonitor. Guard against shutdown so
+			// a stopped consumer cannot wedge the worker forever.
+			event := models.Event{
 				Type: models.EventDeviceFailure,
 				Payload: &models.DeviceFailureEvent{
 					DeviceID:  result.DeviceID,
 					Timestamp: now,
 					Reason:    "poll",
 				},
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case s.failureChan <- event:
 			}
 		}
 	}
@@ -206,7 +246,8 @@ func (s *MetricsService) handleWrite(ctx context.Context, results []plugin.Resul
 		return
 	}
 
-	// Get connection and use pgx.CopyFrom for batch insert
+	// Get connection and use pgx.CopyFrom for batch insert, chunked so an
+	// unbounded result set never allocates one giant write.
 	conn, err := s.writeDB.Conn(ctx)
 	if err != nil {
 		slog.Error("Failed to get write connection", "component", "MetricsService", "error", err)
@@ -214,21 +255,28 @@ func (s *MetricsService) handleWrite(ctx context.Context, results []plugin.Resul
 	}
 	defer conn.Close()
 
-	err = conn.Raw(func(driverConn any) error {
-		pgxConn := driverConn.(*stdlib.Conn).Conn()
+	for start := 0; start < len(rows); start += copyFromBatchSize {
+		end := start + copyFromBatchSize
+		if end > len(rows) {
+			end = len(rows)
+		}
+		chunk := rows[start:end]
 
-		_, copyErr := pgxConn.CopyFrom(
-			ctx,
-			pgx.Identifier{"metrics"},
-			[]string{"device_id", "data", "timestamp"},
-			pgx.CopyFromRows(rows),
-		)
-		return copyErr
-	})
+		err = conn.Raw(func(driverConn any) error {
+			pgxConn := driverConn.(*stdlib.Conn).Conn()
 
-	if err != nil {
-		slog.Error("Batch insert failed", "component", "MetricsService", "error", err)
-		return
+			_, copyErr := pgxConn.CopyFrom(
+				ctx,
+				pgx.Identifier{"metrics"},
+				[]string{"device_id", "data", "timestamp"},
+				pgx.CopyFromRows(chunk),
+			)
+			return copyErr
+		})
+		if err != nil {
+			slog.Error("Batch insert failed", "component", "MetricsService", "chunk_start", start, "error", err)
+			return
+		}
 	}
 
 	slog.Debug("Batch inserted metrics", "component", "MetricsService", "count", len(rows))
@@ -245,7 +293,7 @@ func (s *MetricsService) handleQuery(ctx context.Context, req models.Request) {
 	query, ok := req.Payload.(*MetricQueryRequest)
 	if !ok {
 		resp.Error = fmt.Errorf("invalid payload for metric query")
-		req.ReplyCh <- resp
+		s.reply(ctx, req, resp)
 		return
 	}
 
@@ -256,14 +304,31 @@ func (s *MetricsService) handleQuery(ctx context.Context, req models.Request) {
 		resp.Data = results
 	}
 
-	req.ReplyCh <- resp
+	s.reply(ctx, req, resp)
+}
+
+// reply delivers a response, aborting if the requester has gone away so a
+// stalled caller can never wedge the worker.
+func (s *MetricsService) reply(ctx context.Context, req models.Request, resp models.Response) {
+	select {
+	case <-ctx.Done():
+		slog.Warn("Context cancelled before replying to metrics query", "component", "MetricsService")
+	case req.ReplyCh <- resp:
+	}
 }
 
 // getMetricsBatch fetches metrics for multiple devices.
 func (s *MetricsService) getMetricsBatch(ctx context.Context, deviceIDs []int64, query models.MetricQuery) ([]*BatchMetricResult, error) {
+	// Bound client-controlled inputs at the service boundary.
+	if len(deviceIDs) > maxDeviceIDsPerQuery {
+		return nil, fmt.Errorf("device_ids exceeds maximum of %d", maxDeviceIDsPerQuery)
+	}
 	limit := query.Limit
 	if limit <= 0 {
 		limit = s.defaultLimit
+	}
+	if limit > maxMetricLimit {
+		limit = maxMetricLimit
 	}
 
 	// Default time range if not provided

@@ -36,9 +36,20 @@ func (r *SqlxRepository[T]) tableName() string {
 	return zero.TableName()
 }
 
-// DB returns the underlying database connection for specialized queries
-func (r *SqlxRepository[T]) DB() *sqlx.DB {
-	return r.db
+// validColumns returns the set of db-tagged column names on the model. Used to
+// reject arbitrary map keys in GetByFields, which are interpolated into SQL.
+func validColumns[T models.TableNamer]() map[string]struct{} {
+	var zero T
+	t := reflect.TypeOf(zero)
+	cols := make(map[string]struct{}, t.NumField())
+	for i := 0; i < t.NumField(); i++ {
+		dbTag := t.Field(i).Tag.Get("db")
+		if dbTag == "" || dbTag == "-" {
+			continue
+		}
+		cols[dbTag] = struct{}{}
+	}
+	return cols
 }
 
 func (r *SqlxRepository[T]) List(ctx context.Context) ([]*T, error) {
@@ -61,23 +72,38 @@ func (r *SqlxRepository[T]) Get(ctx context.Context, id int64) (*T, error) {
 func (r *SqlxRepository[T]) GetByFields(ctx context.Context, filters map[string]any) (*T, error) {
 	var entity T
 
-	// Build WHERE clause dynamically
-	var conditions []string
-	var args []any
-	i := 1
-	for col, val := range filters {
-		conditions = append(conditions, fmt.Sprintf("%s = $%d", col, i))
-		args = append(args, val)
-		i++
+	conditions, args, err := buildFilterClause(filters, validColumns[T]())
+	if err != nil {
+		return nil, err
 	}
 
 	query := fmt.Sprintf("SELECT * FROM %s WHERE %s LIMIT 1",
 		r.tableName(), strings.Join(conditions, " AND "))
-	err := r.db.GetContext(ctx, &entity, query, args...)
-	if err != nil {
+	if err := r.db.GetContext(ctx, &entity, query, args...); err != nil {
 		return nil, err
 	}
 	return &entity, nil
+}
+
+// buildFilterClause validates filter column names against an allowlist and
+// builds the parameterized WHERE clause. Map keys are interpolated directly
+// into SQL, so unknown columns are rejected instead of becoming injection.
+func buildFilterClause(filters map[string]any, cols map[string]struct{}) ([]string, []any, error) {
+	if len(filters) == 0 {
+		return nil, nil, fmt.Errorf("GetByFields requires at least one filter")
+	}
+	var conditions []string
+	var args []any
+	i := 1
+	for col, val := range filters {
+		if _, ok := cols[col]; !ok {
+			return nil, nil, fmt.Errorf("invalid filter column %q", col)
+		}
+		conditions = append(conditions, fmt.Sprintf("%s = $%d", col, i))
+		args = append(args, val)
+		i++
+	}
+	return conditions, args, nil
 }
 
 func (r *SqlxRepository[T]) Create(ctx context.Context, entity *T) (*T, error) {

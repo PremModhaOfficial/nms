@@ -2,15 +2,21 @@ package persistence
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"strings"
 	"sync"
+	"time"
 
 	"nms/pkg/database"
 	"nms/pkg/models"
 	"nms/pkg/plugin"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jmoiron/sqlx"
 )
 
@@ -73,19 +79,48 @@ func NewEntityService(
 func (writer *EntityService) Run(ctx context.Context) {
 	slog.Info("Starting entity writer", "component", "EntityService")
 
+	// Reconcile caches periodically so devices/credentials added or removed by
+	// direct DB writes (not via the API) are eventually reflected in memory.
+	backfillCtx, cancelBackfill := context.WithCancel(ctx)
+	defer cancelBackfill()
+	go writer.cacheBackfill(backfillCtx, 5*time.Minute)
+
 	for {
 		select {
 		case <-ctx.Done():
 			slog.Info("Stopping entity writer", "component", "EntityService")
 			return
 		case result := <-writer.discoveryResultsChan:
-			writer.provisionFromDiscovery(ctx, result)
+			writer.safe("provisionFromDiscovery", func() { writer.provisionFromDiscovery(ctx, result) })
 		case event := <-writer.eventsChan:
-			writer.handleEvent(ctx, event)
+			writer.safe("handleEvent", func() { writer.handleEvent(ctx, event) })
 		case req := <-writer.requestsChan:
-			writer.handleCrudRequest(ctx, req)
+			writer.safe("handleCrudRequest", func() { writer.handleCrudRequest(ctx, req) })
 		}
 	}
+}
+
+// safe runs fn with panic containment so a single bad input cannot kill the
+// state-owning goroutine (which would freeze every caller on requestsChan).
+func (writer *EntityService) safe(op string, fn func()) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("panic recovered in entity service", "component", "EntityService", "op", op, "error", r)
+		}
+	}()
+	fn()
+}
+
+// isNotFound reports whether err means "no rows" as opposed to a real failure.
+func isNotFound(err error) bool {
+	return errors.Is(err, sql.ErrNoRows) || errors.Is(err, pgx.ErrNoRows)
+}
+
+// isUniqueViolation reports whether err is a Postgres unique-constraint
+// violation (SQLSTATE 23505), replacing brittle string matching.
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
 // provisionFromDiscovery creates a device from a discovery result.
@@ -102,12 +137,20 @@ func (writer *EntityService) provisionFromDiscovery(ctx context.Context, result 
 		slog.Debug("Device already exists", "component", "EntityService", "target", result.Target, "port", result.Port, "device_id", existingDevice.ID)
 		return
 	}
-
-	// Get plugin ID from credential profile
-	var pluginID string
-	if cred, err := writer.credentialRepo.Get(ctx, result.CredentialProfileID); err == nil && cred != nil {
-		pluginID = cred.Protocol
+	if err != nil && !isNotFound(err) {
+		// A real DB failure must not be mistaken for "no duplicate".
+		slog.Error("Failed to check existing device", "component", "EntityService", "target", result.Target, "port", result.Port, "error", err)
+		return
 	}
+
+	// Get plugin ID from credential profile. A missing credential must not
+	// silently create a device that the poller can never poll.
+	cred, credErr := writer.credentialRepo.Get(ctx, result.CredentialProfileID)
+	if credErr != nil {
+		slog.Error("Failed to fetch credential profile, skipping provisioning", "component", "EntityService", "credential_id", result.CredentialProfileID, "error", credErr)
+		return
+	}
+	pluginID := cred.Protocol
 
 	// Determine initial status based on AutoProvision
 	profile, err := writer.discoveryProfileRepo.Get(ctx, result.DiscoveryProfileID)
@@ -134,7 +177,7 @@ func (writer *EntityService) provisionFromDiscovery(ctx context.Context, result 
 	createdDevice, err := writer.deviceRepo.Create(ctx, &device)
 	if err != nil {
 		// Handle race condition: check if error is due to unique constraint (IP + Port)
-		if strings.Contains(err.Error(), "unique constraint") || strings.Contains(err.Error(), "duplicate key") {
+		if isUniqueViolation(err) {
 			slog.Debug("Device already exists (caught by DB constraint)", "component", "EntityService", "target", result.Target, "port", result.Port)
 			return
 		}
@@ -147,7 +190,7 @@ func (writer *EntityService) provisionFromDiscovery(ctx context.Context, result 
 
 	if initialStatus == "active" {
 		// Publish event so scheduler picks it up
-		go sendEvent(writer.deviceEvents, models.Event{
+		sendEvent(writer.deviceEvents, models.Event{
 			Type:    models.EventCreate,
 			Payload: createdDevice,
 		})
@@ -188,7 +231,7 @@ func (writer *EntityService) triggerDiscovery(ctx context.Context, event models.
 		profile.CredentialProfile = cred
 	}
 
-	go sendEvent(writer.discoveryProfileEvents, models.Event{
+	sendEvent(writer.discoveryProfileEvents, models.Event{
 		Type:    models.EventRunDiscovery,
 		Payload: profile,
 	})
@@ -225,7 +268,7 @@ func (writer *EntityService) provisionDevice(ctx context.Context, event models.E
 	// Update cache with activated device
 	writer.updateDeviceCache(models.OpUpdate, updatedDevice)
 
-	go sendEvent(writer.deviceEvents, models.Event{
+	sendEvent(writer.deviceEvents, models.Event{
 		Type:    models.EventUpdate,
 		Payload: updatedDevice,
 	})
@@ -259,7 +302,7 @@ func handleCRUD[T models.TableNamer](
 		}
 		data, err := repo.Create(ctx, entity)
 		if err == nil && eventCh != nil {
-			go sendEvent(eventCh, models.Event{Type: models.EventCreate, Payload: data})
+			sendEvent(eventCh, models.Event{Type: models.EventCreate, Payload: data})
 		}
 		resp.Data, resp.Error = data, err
 
@@ -271,7 +314,7 @@ func handleCRUD[T models.TableNamer](
 		}
 		data, err := repo.Update(ctx, req.ID, entity)
 		if err == nil && eventCh != nil {
-			go sendEvent(eventCh, models.Event{Type: models.EventUpdate, Payload: data})
+			sendEvent(eventCh, models.Event{Type: models.EventUpdate, Payload: data})
 		}
 		resp.Data, resp.Error = data, err
 
@@ -281,7 +324,7 @@ func handleCRUD[T models.TableNamer](
 			entity, _ := repo.Get(ctx, req.ID)
 			err := repo.Delete(ctx, req.ID)
 			if err == nil && entity != nil {
-				go sendEvent(eventCh, models.Event{Type: models.EventDelete, Payload: entity})
+				sendEvent(eventCh, models.Event{Type: models.EventDelete, Payload: entity})
 			}
 			resp.Error = err
 		} else {
@@ -298,6 +341,12 @@ func handleCRUD[T models.TableNamer](
 // handleDiscoveryProfileCRUD handles DiscoveryProfile CRUD and enriches eventsChan with credential data.
 func (writer *EntityService) handleDiscoveryProfileCRUD(ctx context.Context, req models.Request) models.Response {
 	var resp models.Response
+
+	if profile, ok := req.Payload.(*models.DiscoveryProfile); ok {
+		if err := validateDiscoveryProfile(profile, req.Operation); err != nil {
+			return models.Response{Error: err}
+		}
+	}
 
 	switch req.Operation {
 	case models.OpList:
@@ -320,7 +369,7 @@ func (writer *EntityService) handleDiscoveryProfileCRUD(ctx context.Context, req
 			if cred, credErr := writer.credentialRepo.Get(ctx, data.CredentialProfileID); credErr == nil {
 				data.CredentialProfile = cred
 			}
-			go sendEvent(writer.discoveryProfileEvents, models.Event{Type: models.EventCreate, Payload: data})
+			sendEvent(writer.discoveryProfileEvents, models.Event{Type: models.EventCreate, Payload: data})
 		}
 		resp.Data, resp.Error = data, err
 
@@ -336,7 +385,7 @@ func (writer *EntityService) handleDiscoveryProfileCRUD(ctx context.Context, req
 			if cred, credErr := writer.credentialRepo.Get(ctx, data.CredentialProfileID); credErr == nil {
 				data.CredentialProfile = cred
 			}
-			go sendEvent(writer.discoveryProfileEvents, models.Event{Type: models.EventUpdate, Payload: data})
+			sendEvent(writer.discoveryProfileEvents, models.Event{Type: models.EventUpdate, Payload: data})
 		}
 		resp.Data, resp.Error = data, err
 
@@ -344,7 +393,7 @@ func (writer *EntityService) handleDiscoveryProfileCRUD(ctx context.Context, req
 		entity, _ := writer.discoveryProfileRepo.Get(ctx, req.ID)
 		err := writer.discoveryProfileRepo.Delete(ctx, req.ID)
 		if err == nil && entity != nil {
-			go sendEvent(writer.discoveryProfileEvents, models.Event{Type: models.EventDelete, Payload: entity})
+			sendEvent(writer.discoveryProfileEvents, models.Event{Type: models.EventDelete, Payload: entity})
 		}
 		resp.Error = err
 
@@ -380,14 +429,32 @@ func (writer *EntityService) handleCrudRequest(ctx context.Context, req models.R
 		}
 	}
 
-	req.ReplyCh <- resp
+	// Reply must always be delivered; a missing/blocked reply channel wedges
+	// the caller forever. Guard the send so shutdown cannot stall the loop.
+	select {
+	case <-ctx.Done():
+		slog.Warn("Context cancelled before replying", "component", "EntityService", "op", req.Operation)
+	case req.ReplyCh <- resp:
+	}
 }
 
 // handleCredentialCRUD handles CRUD for credentials and updates cache
 func (writer *EntityService) handleCredentialCRUD(ctx context.Context, req models.Request) models.Response {
-	// Validate name is not whitespace-only
-	if req.Operation == models.OpCreate || req.Operation == models.OpUpdate {
-		if cred, ok := req.Payload.(*models.CredentialProfile); ok {
+	if cred, ok := req.Payload.(*models.CredentialProfile); ok {
+		switch req.Operation {
+		case models.OpCreate:
+			// Payload is validated at the service boundary (the model no longer
+			// marks it binding:"required" so updates can omit it).
+			if strings.TrimSpace(cred.Name) == "" {
+				return models.Response{Error: fmt.Errorf("name cannot be empty or whitespace-only")}
+			}
+			if strings.TrimSpace(cred.Protocol) == "" {
+				return models.Response{Error: fmt.Errorf("protocol cannot be empty or whitespace-only")}
+			}
+			if cred.Payload == "" {
+				return models.Response{Error: fmt.Errorf("payload is required on create")}
+			}
+		case models.OpUpdate:
 			if strings.TrimSpace(cred.Name) == "" {
 				return models.Response{Error: fmt.Errorf("name cannot be empty or whitespace-only")}
 			}
@@ -419,10 +486,16 @@ func (writer *EntityService) handleDeviceCRUD(ctx context.Context, req models.Re
 			if strings.TrimSpace(device.PluginID) == "" {
 				return models.Response{Error: fmt.Errorf("plugin_id is required")}
 			}
+			if err := validateDeviceFields(device); err != nil {
+				return models.Response{Error: err}
+			}
 		case models.OpUpdate:
 			// Fail-fast: credential_profile_id and discovery_profile_id are immutable
 			if device.CredentialProfileID != 0 || device.DiscoveryProfileID != 0 {
 				return models.Response{Error: fmt.Errorf("credential_profile_id and discovery_profile_id are immutable after creation")}
+			}
+			if err := validateDeviceFields(device); err != nil {
+				return models.Response{Error: err}
 			}
 		}
 	}
@@ -432,6 +505,42 @@ func (writer *EntityService) handleDeviceCRUD(ctx context.Context, req models.Re
 		writer.updateDeviceCache(req.Operation, resp.Data)
 	}
 	return resp
+}
+
+// validateDeviceFields enforces the ranges gin's binding tags previously
+// checked: port 1-65535 (0 = default), polling interval 60-3600, IP format,
+// and status enum. Zero/empty values are allowed (partial updates).
+func validateDeviceFields(device *models.Device) error {
+	if device.Port != 0 && (device.Port < 1 || device.Port > 65535) {
+		return fmt.Errorf("port must be between 1 and 65535")
+	}
+	if device.PollingIntervalSeconds != 0 && (device.PollingIntervalSeconds < 60 || device.PollingIntervalSeconds > 3600) {
+		return fmt.Errorf("polling_interval_seconds must be between 60 and 3600")
+	}
+	if device.IPAddress != "" && net.ParseIP(device.IPAddress) == nil {
+		return fmt.Errorf("ip_address must be a valid IP address")
+	}
+	switch device.Status {
+	case "", "discovered", "active", "inactive", "error":
+	default:
+		return fmt.Errorf("invalid status %q", device.Status)
+	}
+	return nil
+}
+
+// validateDiscoveryProfile enforces the required fields gin's binding tags
+// previously checked on create and update.
+func validateDiscoveryProfile(profile *models.DiscoveryProfile, op string) error {
+	if strings.TrimSpace(profile.Name) == "" {
+		return fmt.Errorf("name cannot be empty or whitespace-only")
+	}
+	if strings.TrimSpace(profile.Target) == "" {
+		return fmt.Errorf("target cannot be empty or whitespace-only")
+	}
+	if profile.Port < 1 || profile.Port > 65535 {
+		return fmt.Errorf("port must be between 1 and 65535")
+	}
+	return nil
 }
 
 // updateDeviceCache updates the in-memory device cache based on CRUD operation
@@ -526,8 +635,19 @@ func (writer *EntityService) handleGetBatch(req models.Request) models.Response 
 
 	toPing := make([]*models.Device, 0)
 	toSkip := make([]*models.Device, 0)
+	seen := make(map[int64]struct{}, len(req.IDs))
 
 	for _, id := range req.IDs {
+		// The scheduler's priority queue may hold duplicate entries for a
+		// device (lazy deletion: create/update events re-add the ID without
+		// removing old entries). De-duplicate so a device is never polled
+		// more than once per scheduler tick.
+		if _, dup := seen[id]; dup {
+			slog.Debug("Duplicate device ID in batch, skipping", "component", "EntityService", "device_id", id)
+			continue
+		}
+		seen[id] = struct{}{}
+
 		dev, exists := writer.deviceCache[id]
 		if !exists {
 			// Lazy queue management: device was deleted, skip silently
@@ -586,11 +706,29 @@ func (writer *EntityService) handleDeactivateDevice(ctx context.Context, deviceI
 	writer.updateDeviceCache(models.OpUpdate, updatedDevice)
 
 	// Publish event for cache invalidation in Scheduler
-	go sendEvent(writer.deviceEvents, models.Event{
+	sendEvent(writer.deviceEvents, models.Event{
 		Type:    models.EventUpdate,
 		Payload: updatedDevice,
 	})
 
 	slog.Info("Device deactivated", "component", "EntityService", "device_id", deviceID)
 	return models.Response{Data: updatedDevice}
+}
+
+// cacheBackfill refreshes the in-memory caches periodically so devices deleted
+// while the service runs are eventually removed (caches were previously
+// reconciled only at startup).
+func (writer *EntityService) cacheBackfill(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := writer.LoadCaches(ctx); err != nil {
+				slog.Error("Cache backfill failed", "component", "EntityService", "error", err)
+			}
+		}
+	}
 }

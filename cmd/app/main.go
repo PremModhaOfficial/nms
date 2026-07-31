@@ -22,7 +22,6 @@ import (
 	"nms/pkg/models"
 	"nms/pkg/plugin"
 
-	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx"
 )
 
@@ -53,6 +52,24 @@ const (
 func main() {
 	initLogger()
 	conf := loadConfig()
+
+	// Fail fast on insecure secrets in production; warn otherwise.
+	if err := conf.ValidateSecrets(); err != nil {
+		if os.Getenv("APP_ENV") == "production" {
+			slog.Error("Refusing to start with insecure secrets", "error", err)
+			os.Exit(1)
+		}
+		slog.Warn("Security validation warning", "error", err)
+	}
+
+	// In production, never serve the management API over plain HTTP (it
+	// carries JWTs, encryption keys, and admin hashes). Fail fast unless TLS
+	// is configured.
+	if os.Getenv("APP_ENV") == "production" && (conf.TLSCertFile == "" || conf.TLSKeyFile == "") {
+		slog.Error("Refusing to start in production without TLS (set TLS_CERT_FILE and TLS_KEY_FILE)")
+		os.Exit(1)
+	}
+
 	auth := api.Auth(conf)
 	db := initDatabase(conf)
 
@@ -75,35 +92,26 @@ func main() {
 
 	startServices(ctx, services)
 
-	if err := conf.ValidateSecrets(); err != nil {
-		slog.Warn("Security validation warning", "error", err)
-	}
-
 	router := initRouter(conf, auth, channels)
 
-	// Configure HTTP server
-	var addr string
-	var server *http.Server
-
+	// Configure HTTP server. TLS when cert+key are set, plain HTTP otherwise.
+	addr := ":8080"
 	if conf.TLSCertFile != "" && conf.TLSKeyFile != "" {
 		addr = ":8443"
-		server = &http.Server{Addr: addr, Handler: router}
-		slog.Info("Starting HTTPS app", "port", 8443)
-		go func() {
-			if err := server.ListenAndServeTLS(conf.TLSCertFile, conf.TLSKeyFile); err != nil && err != http.ErrServerClosed {
-				slog.Error("Server failed", "error", err)
-			}
-		}()
-	} else {
-		addr = ":8080"
-		server = &http.Server{Addr: addr, Handler: router}
-		slog.Info("Starting HTTP app", "port", 8080)
-		go func() {
-			if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				slog.Error("Server failed", "error", err)
-			}
-		}()
 	}
+	server := newHTTPServer(addr, router)
+	slog.Info("Starting app", "addr", addr)
+	go func() {
+		var err error
+		if conf.TLSCertFile != "" && conf.TLSKeyFile != "" {
+			err = server.ListenAndServeTLS(conf.TLSCertFile, conf.TLSKeyFile)
+		} else {
+			err = server.ListenAndServe()
+		}
+		if err != nil && err != http.ErrServerClosed {
+			slog.Error("Server failed", "error", err)
+		}
+	}()
 
 	// Wait for shutdown signal
 	<-ctx.Done()
@@ -126,7 +134,7 @@ func initLogger() {
 }
 
 func loadConfig() *config.Config {
-	conf, err := config.LoadConfig(".")
+	conf, err := config.LoadConfig()
 	if err != nil {
 		slog.Error("Failed to load conf", "error", err)
 		os.Exit(1)
@@ -196,10 +204,10 @@ func initServices(conf *config.Config, db *sqlx.DB, fpingPath string) (*services
 		pollResultChan,
 	)
 
-	// Create separate DB pools for metrics components
+	// Create separate DB pools for metrics components, sharing the main pool settings.
 	metricsWriteDB, err := database.ConnectRaw(
 		conf, "MetricsWrite",
-		conf.MetricsWriterMaxOpen, conf.MetricsWriterMaxIdle,
+		conf.DBMaxOpenConns, conf.DBMaxIdleConns,
 	)
 	if err != nil {
 		slog.Error("Failed to create MetricsWrite DB pool", "error", err)
@@ -208,7 +216,7 @@ func initServices(conf *config.Config, db *sqlx.DB, fpingPath string) (*services
 
 	metricsReadDB, err := database.ConnectRaw(
 		conf, "MetricsRead",
-		conf.MetricsReaderMaxOpen, conf.MetricsReaderMaxIdle,
+		conf.DBMaxOpenConns, conf.DBMaxIdleConns,
 	)
 	if err != nil {
 		slog.Error("Failed to create MetricsRead DB pool", "error", err)
@@ -261,6 +269,20 @@ func initServices(conf *config.Config, db *sqlx.DB, fpingPath string) (*services
 	return svc, channels
 }
 
+// newHTTPServer builds an http.Server with explicit timeouts so slowloris and
+// slow-body clients cannot hold connections open indefinitely.
+func newHTTPServer(addr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    1 << 20,
+	}
+}
+
 func loadInitialData(entityService *persistence.EntityService, sched *scheduling.Scheduler) {
 	// Load caches in EntityService
 	if err := entityService.LoadCaches(context.Background()); err != nil {
@@ -283,25 +305,26 @@ func startServices(ctx context.Context, svc *services) {
 	go svc.failureService.Run(ctx)
 }
 
-func initRouter(conf *config.Config, auth *api.JwtAuth, channels *apiChannels) *gin.Engine {
-	router := gin.Default()
-	router.Use(api.SecurityHeaders())
+func initRouter(conf *config.Config, auth *api.JwtAuth, channels *apiChannels) http.Handler {
+	mux := http.NewServeMux()
 
 	// Public routes (no auth)
-	router.POST("/login", auth.LoginHandler)
+	mux.HandleFunc("POST /login", auth.LoginHandler)
 
-	// Protected routes
-	apiGroup := router.Group("/api/v1")
-	apiGroup.Use(auth.JWTMiddleware())
-	{
-		api.RegisterEntityRoutes[models.CredentialProfile](apiGroup, "/credentials", "CredentialProfile", conf.EncryptionKey, channels.crudRequest)
-		api.RegisterEntityRoutes[models.Device](apiGroup, "/devices", "Device", conf.EncryptionKey, channels.crudRequest)
-		api.RegisterEntityRoutes[models.DiscoveryProfile](apiGroup, "/discovery_profiles", "DiscoveryProfile", conf.EncryptionKey, channels.crudRequest)
-		api.RegisterMetricsRoute(apiGroup, channels.metricRequest)
-
-		apiGroup.POST("/discovery_profiles/:id/run", api.RunDiscoveryHandler(channels.provisioningEvent))
-		apiGroup.POST("/devices/:id/provision", api.ProvisionDeviceHandler(channels.provisioningEvent))
+	// Protected routes. Every pattern is wrapped in the JWT middleware.
+	protect := func(pattern string, h http.Handler) {
+		mux.Handle(pattern, auth.JWTMiddleware()(h))
 	}
+	api.RegisterEntityRoutes[models.CredentialProfile](protect, "/api/v1/credentials", "CredentialProfile", conf.EncryptionKey, channels.crudRequest)
+	api.RegisterEntityRoutes[models.Device](protect, "/api/v1/devices", "Device", conf.EncryptionKey, channels.crudRequest)
+	api.RegisterEntityRoutes[models.DiscoveryProfile](protect, "/api/v1/discovery_profiles", "DiscoveryProfile", conf.EncryptionKey, channels.crudRequest)
+	api.RegisterMetricsRoute(protect, "/api/v1/metrics", channels.metricRequest)
+	protect("POST /api/v1/discovery_profiles/{id}/run", api.RunDiscoveryHandler(channels.provisioningEvent, channels.crudRequest))
+	protect("POST /api/v1/devices/{id}/provision", api.ProvisionDeviceHandler(channels.provisioningEvent))
 
-	return router
+	// Security headers and body cap apply to every route.
+	var h http.Handler = mux
+	h = api.SecurityHeaders()(h)
+	h = api.MaxBodyBytes(1 << 20)(h) // 1 MiB request body cap
+	return h
 }

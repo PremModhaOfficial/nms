@@ -1,7 +1,6 @@
 package models
 
 import (
-	"encoding/json"
 	"time"
 )
 
@@ -10,22 +9,16 @@ type TableNamer interface {
 	TableName() string
 }
 
-// Metric represents the metrics table storing raw poll results
-type Metric struct {
-	ID        int64           `db:"id" json:"id"`
-	DeviceID  int64           `db:"device_id" json:"device_id"`
-	Data      json.RawMessage `db:"data" json:"data"`
-	Timestamp time.Time       `db:"timestamp" json:"timestamp"`
-}
-
-func (Metric) TableName() string { return "metrics" }
-
 // CredentialProfile represents the credential_profiles table
 type CredentialProfile struct {
-	ID        int64     `db:"id" json:"id"`
-	Name      string    `db:"name" json:"name" binding:"required"`
-	Protocol  string    `db:"protocol" json:"protocol" binding:"required"`
-	Payload   string    `db:"payload" json:"payload" binding:"required" gocrypt:"aes"` // Encrypted credential data
+	ID       int64  `db:"id" json:"id"`
+	Name     string `db:"name" json:"name" binding:"required"`
+	Protocol string `db:"protocol" json:"protocol" binding:"required"`
+	// Payload is the encrypted credential data. On create it is required
+	// (validated in EntityService); on update a payload of "[HIDDEN]" or ""
+	// means "preserve the existing ciphertext", so the field carries
+	// update:"omitempty" to skip it in the SET clause.
+	Payload   string    `db:"payload" json:"payload" gocrypt:"aes" update:"omitempty"`
 	CreatedAt time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
 }

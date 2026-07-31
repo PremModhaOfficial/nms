@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"nms/pkg/api"
 
@@ -17,11 +19,25 @@ import (
 	"nms/pkg/pluginWorker"
 )
 
+// MaxExpandHosts caps how many IPs a single target may expand to (a /16 block).
+const MaxExpandHosts = 1 << 16 // 65536
+
+// maxTasksPerBatch caps how many tasks are sent to a single plugin invocation.
+// It must stay <= the plugin's own per-batch cap (winrm: maxInputsPerBatch = 10000),
+// otherwise a large discovery (e.g. a /16) would be rejected by the plugin and
+// silently produce no results. Chunking keeps this invariant without lowering
+// MaxExpandHosts.
+const maxTasksPerBatch = 10000
+
+// pendingStaleAfter is how long a pending discovery may stay without a result before being reaped.
+const pendingStaleAfter = 30 * time.Minute
+
 // discoveryContext holds profile context for pending discoveries
 type discoveryContext struct {
 	DiscoveryProfileID  int64
 	CredentialProfileID int64
 	Port                int
+	createdAt           time.Time
 }
 
 // DiscoveryService coordinates the discovery process.
@@ -74,7 +90,11 @@ func (discovery *DiscoveryService) Start(ctx context.Context) {
 		case <-ctx.Done():
 			slog.Info("Stopping discovery service", "component", "DiscoveryService")
 			return
-		case event := <-discovery.events:
+		case event, ok := <-discovery.events:
+			if !ok {
+				slog.Info("Discovery events channel closed", "component", "DiscoveryService")
+				return
+			}
 			discovery.processEvent(ctx, event)
 		}
 	}
@@ -135,7 +155,11 @@ func (discovery *DiscoveryService) collectResults(ctx context.Context) {
 				}
 
 				slog.Info("SUCCESS: Found device", "component", "DiscoveryService", "hostname", res.Hostname, "target", res.Target)
-				discovery.resultCh <- res // Forward to DataWriter
+				select {
+				case <-ctx.Done():
+					return
+				case discovery.resultCh <- res: // Forward to DataWriter
+				}
 			}
 		}
 	}
@@ -157,19 +181,19 @@ func (discovery *DiscoveryService) runDiscovery(ctx context.Context, profile *mo
 
 	// 2. Get credentials (preloaded in event by PreloadingDiscoveryProfileRepo)
 	credProfile := profile.CredentialProfile
+	if credProfile == nil {
+		slog.Error("Credential profile not preloaded in event", "component", "DiscoveryService", "profile_id", profile.CredentialProfileID)
+		return
+	}
 
 	creds, err := api.DecryptPayload(credProfile, discovery.encryptionKey)
 	if err != nil {
-		slog.Error("Failed to decrypt credentials", "component", "DiscoveryService", "error", err)
-		creds = nil
+		slog.Error("Failed to decrypt credentials, skipping discovery", "component", "DiscoveryService", "credential_id", credProfile.ID, "error", err)
+		return
 	}
 
 	// 3. Get binary path from protocol
-	var protocol string
-	if credProfile != nil {
-		protocol = credProfile.Protocol
-	}
-
+	protocol := credProfile.Protocol
 	if protocol == "" {
 		slog.Error("No protocol specified in credential profile", "component", "DiscoveryService", "profile_id", profile.CredentialProfileID)
 		return
@@ -192,9 +216,22 @@ func (discovery *DiscoveryService) runDiscovery(ctx context.Context, profile *mo
 		DiscoveryProfileID:  profile.ID,
 		CredentialProfileID: profile.CredentialProfileID,
 		Port:                profile.Port,
+		createdAt:           time.Now(),
 	}
 
 	discovery.pendingMu.Lock()
+	// Reap stale pending entries (targets the plugin never reported back for) to bound the map.
+	now := time.Now()
+	for ip, pctx := range discovery.pending {
+		if now.Sub(pctx.createdAt) > pendingStaleAfter {
+			delete(discovery.pending, ip)
+		}
+	}
+	if len(discovery.pending)+len(ips) > MaxExpandHosts {
+		discovery.pendingMu.Unlock()
+		slog.Error("Too many pending discoveries", "component", "DiscoveryService", "pending", len(discovery.pending), "new", len(ips), "max", MaxExpandHosts)
+		return
+	}
 	for _, ip := range ips {
 		discovery.pending[ip] = dctx
 	}
@@ -210,9 +247,20 @@ func (discovery *DiscoveryService) runDiscovery(ctx context.Context, profile *mo
 		})
 	}
 
-	// 6. Submit to pool
-	slog.Info("Submitting tasks to pool", "component", "DiscoveryService", "task_count", len(tasks), "bin_path", binPath)
-	discovery.pool.Submit(binPath, tasks)
+	// 6. Submit to pool in chunks bounded by maxTasksPerBatch, so a single
+	// plugin process never receives more than its own batch cap. Submit is
+	// ctx-aware, so a stopped pool can never wedge the event loop during shutdown.
+	for start := 0; start < len(tasks); start += maxTasksPerBatch {
+		end := start + maxTasksPerBatch
+		if end > len(tasks) {
+			end = len(tasks)
+		}
+		slog.Info("Submitting tasks to pool", "component", "DiscoveryService", "task_count", end-start, "chunk_start", start, "bin_path", binPath)
+		if !discovery.pool.Submit(binPath, tasks[start:end]) {
+			slog.Warn("Failed to submit tasks: pool shutting down", "component", "DiscoveryService", "chunk_start", start, "task_count", end-start)
+			return
+		}
+	}
 }
 
 // expandTarget expands a target string to individual IPs.
@@ -235,18 +283,29 @@ func expandTarget(target string) ([]string, error) {
 		return []string{target}, nil
 	}
 
-	return nil, nil
+	return nil, fmt.Errorf("invalid target %q", target)
 }
 
 // expandCIDR expands a CIDR block to all usable host IPs.
+// Only IPv4 prefixes of /16 or longer are allowed, so expansion is bounded.
 func expandCIDR(cidr string) ([]string, error) {
 	ip, ipnet, err := net.ParseCIDR(cidr)
 	if err != nil {
 		return nil, err
 	}
 
-	var ips []string
-	for ip := ip.Mask(ipnet.Mask); ipnet.Contains(ip); incIP(ip) {
+	ones, bits := ipnet.Mask.Size()
+	if bits != 32 {
+		return nil, fmt.Errorf("IPv6 CIDR %q is not supported for expansion", cidr)
+	}
+	if ones < 16 {
+		return nil, fmt.Errorf("CIDR %q is too large (minimum prefix is /16)", cidr)
+	}
+
+	// ones >= 16 guarantees hostCount <= MaxExpandHosts, so this loop terminates.
+	hostCount := 1 << (32 - ones)
+	ips := make([]string, 0, hostCount)
+	for ip := ip.Mask(ipnet.Mask); len(ips) < hostCount; incIP(ip) {
 		ips = append(ips, ip.String())
 	}
 
@@ -261,44 +320,53 @@ func expandCIDR(cidr string) ([]string, error) {
 func expandRange(rangeStr string) ([]string, error) {
 	parts := strings.Split(rangeStr, "-")
 	if len(parts) != 2 {
-		return nil, nil
+		return nil, fmt.Errorf("invalid range %q: expected START-END", rangeStr)
 	}
 
-	startIP := net.ParseIP(strings.TrimSpace(parts[0]))
+	startIP := net.ParseIP(strings.TrimSpace(parts[0])).To4()
 	if startIP == nil {
-		return nil, nil
-	}
-	startIP = startIP.To4()
-	if startIP == nil {
-		return nil, nil
+		return nil, fmt.Errorf("invalid range start %q", parts[0])
 	}
 
 	endPart := strings.TrimSpace(parts[1])
-
-	// Check if end is full IP or just last octet
 	var endIP net.IP
-	if net.ParseIP(endPart) != nil {
-		endIP = net.ParseIP(endPart).To4()
+	if parsed := net.ParseIP(endPart); parsed != nil {
+		endIP = parsed.To4()
+		if endIP == nil {
+			return nil, fmt.Errorf("invalid range end %q: must be an IPv4 address", endPart)
+		}
 	} else {
 		// Just the last octet (e.g., "100" in "192.168.1.1-100")
 		lastOctet, err := strconv.Atoi(endPart)
 		if err != nil || lastOctet < 0 || lastOctet > 255 {
-			return nil, nil
+			return nil, fmt.Errorf("invalid range end %q: expected IPv4 address or last octet", endPart)
 		}
 		endIP = make(net.IP, 4)
 		copy(endIP, startIP)
 		endIP[3] = byte(lastOctet)
 	}
 
-	if endIP == nil {
-		return nil, nil
+	startN := ipToUint32(startIP)
+	endN := ipToUint32(endIP)
+	if endN < startN {
+		return nil, fmt.Errorf("invalid range %q: end precedes start", rangeStr)
+	}
+	// Count in uint64 so the full IPv4 space (2^32 hosts) does not overflow.
+	hostCount := uint64(endN) - uint64(startN) + 1
+	if hostCount > MaxExpandHosts {
+		return nil, fmt.Errorf("range %q expands to %d hosts (max %d)", rangeStr, hostCount, MaxExpandHosts)
 	}
 
-	var ips []string
-	for ip := copyIP(startIP); compareIP(ip, endIP) <= 0; incIP(ip) {
+	ips := make([]string, 0, int(hostCount))
+	for ip := copyIP(startIP); len(ips) < int(hostCount); incIP(ip) {
 		ips = append(ips, ip.String())
 	}
 	return ips, nil
+}
+
+// ipToUint32 converts a 4-byte IP to a uint32 for bounded counting.
+func ipToUint32(ip net.IP) uint32 {
+	return uint32(ip[0])<<24 | uint32(ip[1])<<16 | uint32(ip[2])<<8 | uint32(ip[3])
 }
 
 // incIP increments an IP address by one.
@@ -316,17 +384,4 @@ func copyIP(ip net.IP) net.IP {
 	dup := make(net.IP, len(ip))
 	copy(dup, ip)
 	return dup
-}
-
-// compareIP compares two IPs. Returns -1, 0, or 1.
-func compareIP(a, b net.IP) int {
-	for i := range a {
-		if a[i] < b[i] {
-			return -1
-		}
-		if a[i] > b[i] {
-			return 1
-		}
-	}
-	return 0
 }

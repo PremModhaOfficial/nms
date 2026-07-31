@@ -2,134 +2,121 @@ package config
 
 import (
 	"errors"
+	"os"
 	"os/exec"
+	"strconv"
 	"strings"
-
-	"github.com/spf13/viper"
 )
 
-// Config stores all configuration of the application.
-// The values are read by viper from a config file or environment variable.
+// Config stores all configuration of the application. Values come from
+// environment variables with the defaults below (matching the old app.yaml).
 type Config struct {
-	// Database Configurations
-	DBHost     string `mapstructure:"DB_HOST"`
-	DBUser     string `mapstructure:"DB_USER"`
-	DBPassword string `mapstructure:"DB_PASSWORD"`
-	DBName     string `mapstructure:"DB_NAME"`
-	DBPort     string `mapstructure:"DB_PORT"`
+	// Database
+	DBHost     string
+	DBUser     string
+	DBPassword string
+	DBName     string
+	DBPort     string
 
-	// Server Configurations
-	ServerAddress string `mapstructure:"SERVER_ADDRESS"`
-	TLSCertFile   string `mapstructure:"TLS_CERT_FILE"`
-	TLSKeyFile    string `mapstructure:"TLS_KEY_FILE"`
+	// Server
+	TLSCertFile    string
+	TLSKeyFile     string
+	TrustedProxies string
 
-	// General Configurations
-	PluginsDir string `mapstructure:"PLUGINS_DIR"`
+	// General
+	PluginsDir string
 
-	// Worker Configurations
-	PollWorkerCount int `mapstructure:"POLL_WORKER_COUNT"`
-	DiscWorkerCount int `mapstructure:"DISC_WORKER_COUNT"`
+	// Workers
+	PollWorkerCount int
+	DiscWorkerCount int
 
-	// Scheduler Configurations
-	PollIntervalSec  int `mapstructure:"POLL_INTERVAL_SEC"`
-	AvCheckTimeoutMs int `mapstructure:"AV_CHECK_TIMEOUT_MS"`
-	AvCheckRetries   int `mapstructure:"AV_CHECK_RETRIES"`
+	// Scheduler
+	PollIntervalSec  int
+	AvCheckTimeoutMs int
+	AvCheckRetries   int
 
-	// Security/Encryption Configurations
-	JWTSecret     string `mapstructure:"JWT_SECRET"`
-	EncryptionKey string `mapstructure:"ENCRYPTION_KEY"`
-	AdminUser     string `mapstructure:"NMS_ADMIN_USER"`
-	AdminHash     string `mapstructure:"NMS_ADMIN_HASH"`
+	// Security
+	JWTSecret     string
+	EncryptionKey string
+	AdminUser     string
+	AdminHash     string
 
 	// Authentication
-	SessionDurationHours int `mapstructure:"SESSION_DURATION_HOURS"`
+	SessionDurationHours int
 
 	// Metrics Query Defaults
-	MetricsDefaultLimit         int `mapstructure:"METRICS_DEFAULT_LIMIT"`
-	MetricsDefaultLookbackHours int `mapstructure:"METRICS_DEFAULT_LOOKBACK_HOURS"`
+	MetricsDefaultLimit         int
+	MetricsDefaultLookbackHours int
 
-	// Connection Pool Settings (main GORM pool)
-	DBMaxOpenConns    int `mapstructure:"DB_MAX_OPEN_CONNS"`
-	DBMaxIdleConns    int `mapstructure:"DB_MAX_IDLE_CONNS"`
-	DBConnMaxLifeMins int `mapstructure:"DB_CONN_MAX_LIFE_MINS"`
-
-	// Metrics Writer Pool (high-volume polling writes)
-	MetricsWriterMaxOpen int `mapstructure:"METRICS_WRITER_MAX_OPEN"`
-	MetricsWriterMaxIdle int `mapstructure:"METRICS_WRITER_MAX_IDLE"`
-
-	// Metrics Reader Pool (API queries)
-	MetricsReaderMaxOpen int `mapstructure:"METRICS_READER_MAX_OPEN"`
-	MetricsReaderMaxIdle int `mapstructure:"METRICS_READER_MAX_IDLE"`
+	// Connection Pool Settings (shared by main, write, and read pools)
+	DBMaxOpenConns    int
+	DBMaxIdleConns    int
+	DBConnMaxLifeMins int
 
 	// Health Monitor
-	FailureWindowMin int `mapstructure:"FAILURE_WINDOW_MIN"` // Time window for failure counting (minutes)
-	FailureThreshold int `mapstructure:"FAILURE_THRESHOLD"`  // Number of failures to trigger deactivation
+	FailureWindowMin int
+	FailureThreshold int
 
 	// Metrics Service Worker Pool
-	MetricsWorkerCount int `mapstructure:"METRICS_WORKER_COUNT"`
+	MetricsWorkerCount int
 }
 
-// LoadConfig reads configuration from file or environment variables.
-func LoadConfig(path string) (*Config, error) {
-	v := viper.New()
+// env reads a string env var or returns the default when unset or empty.
+func env(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
 
-	// 1. Set Defaults
-	v.SetDefault("DB_HOST", "localhost")
-	v.SetDefault("DB_USER", "nmslite")
-	v.SetDefault("DB_PASSWORD", "nmslite")
-	v.SetDefault("DB_NAME", "nmslite")
-	v.SetDefault("DB_PORT", "5432")
-	v.SetDefault("PLUGINS_DIR", "plugins")
-	v.SetDefault("POLL_WORKER_COUNT", 5)
-	v.SetDefault("DISC_WORKER_COUNT", 3)
-	v.SetDefault("POLL_INTERVAL_SEC", 30)
-	v.SetDefault("AV_CHECK_TIMEOUT_MS", 500)
-	v.SetDefault("AV_CHECK_RETRIES", 2)
-	v.SetDefault("JWT_SECRET", "default-insecure-secret-change-me")
-	v.SetDefault("ENCRYPTION_KEY", "1234567890123456789012345678901212345678901234567890123456789012")
-	v.SetDefault("NMS_ADMIN_USER", "admin")
-	v.SetDefault("NMS_ADMIN_HASH", "$2a$10$BST/uOdLLXUyqO4fN.b9cuwVwoXEJWWFzpc4iirHiu3GcgbuJqtdu")
-	v.SetDefault("SESSION_DURATION_HOURS", 168)
-	v.SetDefault("METRICS_DEFAULT_LIMIT", 100)
-	v.SetDefault("METRICS_DEFAULT_LOOKBACK_HOURS", 1)
-	v.SetDefault("DB_MAX_OPEN_CONNS", 25)
-	v.SetDefault("DB_MAX_IDLE_CONNS", 10)
-	v.SetDefault("DB_CONN_MAX_LIFE_MINS", 30)
-	v.SetDefault("METRICS_WRITER_MAX_OPEN", 10)
-	v.SetDefault("METRICS_WRITER_MAX_IDLE", 5)
-	v.SetDefault("METRICS_READER_MAX_OPEN", 5)
-	v.SetDefault("METRICS_READER_MAX_IDLE", 2)
-	v.SetDefault("FAILURE_WINDOW_MIN", 3)
-	v.SetDefault("FAILURE_THRESHOLD", 3)
-	v.SetDefault("METRICS_WORKER_COUNT", 4)
-
-	// 2. Read app.yaml for non-sensitive configuration
-	v.AddConfigPath(path)
-	v.SetConfigName("app")
-	v.SetConfigType("yaml")
-	if err := v.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-			return nil, err
+// envInt reads an int env var or returns the default when unset or unparsable.
+func envInt(key string, def int) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
 		}
 	}
+	return def
+}
 
-	// 3. Environment variables have highest priority
-	// SECURITY: Secrets (JWT_SECRET, ENCRYPTION_KEY, DB_PASSWORD, NMS_ADMIN_HASH)
-	// should ONLY be set via environment variables, never in config files.
-	v.AutomaticEnv()
-	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
-
-	var config Config
-	if err := v.Unmarshal(&config); err != nil {
-		return nil, err
+// LoadConfig reads configuration from environment variables.
+func LoadConfig() (*Config, error) {
+	cfg := &Config{
+		DBHost:                      env("DB_HOST", "localhost"),
+		DBUser:                      env("DB_USER", "nmslite"),
+		DBPassword:                  env("DB_PASSWORD", "nmslite"),
+		DBName:                      env("DB_NAME", "nmslite"),
+		DBPort:                      env("DB_PORT", "5432"),
+		TLSCertFile:                 env("TLS_CERT_FILE", ""),
+		TLSKeyFile:                  env("TLS_KEY_FILE", ""),
+		TrustedProxies:              env("TRUSTED_PROXIES", ""),
+		PluginsDir:                  env("PLUGINS_DIR", "plugins"),
+		PollWorkerCount:             envInt("POLL_WORKER_COUNT", 5),
+		DiscWorkerCount:             envInt("DISC_WORKER_COUNT", 3),
+		PollIntervalSec:             envInt("POLL_INTERVAL_SEC", 30),
+		AvCheckTimeoutMs:            envInt("AV_CHECK_TIMEOUT_MS", 500),
+		AvCheckRetries:              envInt("AV_CHECK_RETRIES", 2),
+		JWTSecret:                   env("JWT_SECRET", "default-insecure-secret-change-me"),
+		EncryptionKey:               env("ENCRYPTION_KEY", "1234567890123456789012345678901212345678901234567890123456789012"),
+		AdminUser:                   env("NMS_ADMIN_USER", "admin"),
+		AdminHash:                   env("NMS_ADMIN_HASH", "$2a$10$BST/uOdLLXUyqO4fN.b9cuwVwoXEJWWFzpc4iirHiu3GcgbuJqtdu"),
+		SessionDurationHours:        envInt("SESSION_DURATION_HOURS", 168),
+		MetricsDefaultLimit:         envInt("METRICS_DEFAULT_LIMIT", 100),
+		MetricsDefaultLookbackHours: envInt("METRICS_DEFAULT_LOOKBACK_HOURS", 1),
+		DBMaxOpenConns:              envInt("DB_MAX_OPEN_CONNS", 25),
+		DBMaxIdleConns:              envInt("DB_MAX_IDLE_CONNS", 10),
+		DBConnMaxLifeMins:           envInt("DB_CONN_MAX_LIFE_MINS", 30),
+		FailureWindowMin:            envInt("FAILURE_WINDOW_MIN", 3),
+		FailureThreshold:            envInt("FAILURE_THRESHOLD", 3),
+		MetricsWorkerCount:          envInt("METRICS_WORKER_COUNT", 4),
 	}
 
 	// Validate scheduler tick interval
-	if config.PollIntervalSec < 20 {
+	if cfg.PollIntervalSec < 20 {
 		return nil, errors.New("POLL_INTERVAL_SEC must be at least 20 seconds")
 	}
 
-	return &config, nil
+	return cfg, nil
 }
 
 // ValidateSecrets ensures critical secrets are not using insecure defaults.
@@ -140,6 +127,18 @@ func (c *Config) ValidateSecrets() error {
 	}
 	if c.EncryptionKey == "1234567890123456789012345678901212345678901234567890123456789012" {
 		return errors.New("ENCRYPTION_KEY must be changed from default for production")
+	}
+	// The default admin hash is the well-known bcrypt hash of "admin"; the
+	// default DB password is the widely-known dev value. Both must be changed
+	// for a production deployment.
+	if c.AdminHash == "$2a$10$BST/uOdLLXUyqO4fN.b9cuwVwoXEJWWFzpc4iirHiu3GcgbuJqtdu" {
+		return errors.New("NMS_ADMIN_HASH must be changed from the default 'admin' password for production")
+	}
+	if c.DBPassword == "nmslite" {
+		return errors.New("DB_PASSWORD must be changed from the default for production")
+	}
+	if strings.TrimSpace(c.DBPassword) == "" {
+		return errors.New("DB_PASSWORD must not be empty for production")
 	}
 	return nil
 }

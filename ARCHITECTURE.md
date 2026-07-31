@@ -36,7 +36,7 @@ graph TD
 |------|---------|
 | `routes.go` | Generic CRUD handlers using `RegisterEntityRoutes[T]`. Metrics endpoint via `RegisterMetricsRoute`. |
 | `jwtAuth.go` | `JwtAuth` struct with `LoginHandler` (bcrypt + JWT) and `JWTMiddleware`. |
-| `encryption.go` | `EncryptStruct`/`DecryptStruct` using `gocrypt` for AES. `DecryptPayload` for credential payloads. |
+| `encryption.go` | `EncryptStruct`/`DecryptStruct` using stdlib AES-256-GCM. `DecryptPayload` for credential payloads. |
 | `provisioning.go` | `RunDiscoveryHandler`, `ProvisionDeviceHandler`. |
 
 ### Service Layer (`pkg/Services`)
@@ -101,12 +101,12 @@ graph TD
 ## Startup Sequence
 
 1. `initLogger()` - JSON slog handler
-2. `loadConfig()` - Viper from app.yaml + env vars
+2. `loadConfig()` - env vars with defaults
 3. `initDatabase()` - sqlx connection pool
 4. `initServices()` - Create channels, services, DB pools
 5. `loadInitialData()` - Load caches, init scheduler queue
 6. `startServices()` - Launch 6 goroutines
-7. `initRouter()` - Gin routes with JWT middleware
+7. `initRouter()` - net/http ServeMux with JWT middleware
 8. HTTP server (8080 or 8443 with TLS)
 9. `signal.NotifyContext` - Graceful shutdown
 
@@ -120,5 +120,5 @@ graph TD
 | Lazy queue deletion | EntityService filters deleted devices, no explicit removal |
 | Event-driven | Services decoupled via typed channels |
 | Immutable device relations | `credential_profile_id` and `discovery_profile_id` cannot change after creation |
-| AES encryption | Credentials encrypted at rest with `gocrypt` |
+| AES encryption | Credentials encrypted at rest with stdlib AES-256-GCM |
 | bcrypt passwords | Admin password stored as bcrypt hash |

@@ -1,3 +1,15 @@
-plugins/winrm
-bin/nms-app
-bin/nms-server
+# Build artifacts
+/bin/
+/plugins/
+*.exe
+
+# Runtime logs
+*.log
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Local scratch
+winrm-pin

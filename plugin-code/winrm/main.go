@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"flag"
@@ -14,6 +16,17 @@ import (
 
 	"github.com/masterzen/winrm"
 	"golang.org/x/text/encoding/unicode"
+)
+
+// Explicit bounds: a single batch never spawns more concurrent WinRM
+// sessions than maxConcurrent, and never reads more than maxStdinBytes from
+// the dispatcher. A corrupt dispatcher cannot OOM or exhaust FDs.
+const (
+	maxConcurrent     = 32
+	maxStdinBytes     = 64 << 20 // 64 MiB
+	maxInputsPerBatch = 10000
+	defaultPort       = 5986 // WinRM over HTTPS
+	plaintextPort     = 5985 // WinRM over HTTP (explicit -insecure only)
 )
 
 // Input aligns with plugin.Task from pkg/plugin/types.go but adds compatibility for tests
@@ -42,31 +55,33 @@ type Output struct {
 	Success   bool            `json:"success"`
 	Error     string          `json:"error,omitempty"`
 	Hostname  string          `json:"hostname,omitempty"`
-	Metrics   []Metric        `json:"metrics,omitempty"`
 	Data      json.RawMessage `json:"data,omitempty"`
-}
-
-type Metric struct {
-	Name  string  `json:"name"`
-	Value float64 `json:"value"`
 }
 
 var (
 	discoveryMode = flag.Bool("discovery", false, "Run in discovery mode")
 	timeout       = flag.Duration("timeout", 60*time.Second, "Timeout for WinRM commands")
+	insecure      = flag.Bool("insecure", false, "Skip TLS certificate verification and allow plaintext HTTP (NOT recommended)")
 )
 
 func main() {
 	flag.Parse()
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
 
-	inputData, err := io.ReadAll(os.Stdin)
+	inputData, err := io.ReadAll(io.LimitReader(os.Stdin, maxStdinBytes+1))
 	if err != nil {
 		slog.Error("Failed to read Stdin", "error", err)
 		os.Exit(1)
 	}
 	if len(inputData) == 0 {
+		// Empty stdin: emit an explicit empty result instead of exiting 0
+		// with no stdout (which the pool would misparse as a batch failure).
+		fmt.Println("[]")
 		return
+	}
+	if len(inputData) > maxStdinBytes {
+		slog.Error("Stdin exceeds size limit", "limit_bytes", maxStdinBytes)
+		os.Exit(1)
 	}
 
 	var inputs []Input
@@ -74,14 +89,21 @@ func main() {
 		slog.Error("Invalid JSON input", "error", err)
 		os.Exit(1)
 	}
+	if len(inputs) > maxInputsPerBatch {
+		slog.Error("Input batch exceeds limit", "count", len(inputs), "max", maxInputsPerBatch)
+		os.Exit(1)
+	}
 
 	outputs := make([]Output, len(inputs))
 	var wg sync.WaitGroup
+	sem := make(chan struct{}, maxConcurrent)
 
 	for i, task := range inputs {
 		wg.Add(1)
 		go func(idx int, t Input) {
 			defer wg.Done()
+			defer func() { <-sem }()
+			sem <- struct{}{}
 			outputs[idx] = processTask(t)
 		}(i, task)
 	}
@@ -95,8 +117,17 @@ func main() {
 	}
 }
 
-func processTask(task Input) Output {
-	out := Output{
+func processTask(task Input) (out Output) {
+	// A panic inside the winrm library (nil deref etc.) must not kill the
+	// whole batch; it becomes an error output for this one task.
+	defer func() {
+		if r := recover(); r != nil {
+			out.Success = false
+			out.Error = fmt.Sprintf("panic during task: %v", r)
+		}
+	}()
+
+	out = Output{
 		DeviceID:  task.DeviceID,
 		RequestID: task.RequestID,
 		Target:    task.Target,
@@ -107,8 +138,23 @@ func processTask(task Input) Output {
 	if out.Target == "" {
 		out.Target = task.IP
 	}
+	if out.Target == "" {
+		out.Error = "empty target"
+		return out
+	}
+
+	// Credentials: default to TLS (5986) unless the operator explicitly
+	// opts into plaintext HTTP via -insecure.
+	useTLS := !*insecure
 	if out.Port == 0 {
-		out.Port = 5985
+		out.Port = defaultPort
+		if !useTLS {
+			out.Port = plaintextPort
+		}
+	}
+	if out.Port < 1 || out.Port > 65535 {
+		out.Error = fmt.Sprintf("invalid port %d", out.Port)
+		return out
 	}
 
 	var creds WinRMCreds
@@ -130,7 +176,12 @@ func processTask(task Input) Output {
 		}
 	}
 
-	endpoint := winrm.NewEndpoint(out.Target, out.Port, false, true, nil, nil, nil, *timeout)
+	if creds.Username == "" {
+		out.Error = "empty username in credentials"
+		return out
+	}
+
+	endpoint := winrm.NewEndpoint(out.Target, out.Port, useTLS, *insecure, nil, nil, nil, *timeout)
 	var client *winrm.Client
 	var err error
 
@@ -159,7 +210,10 @@ func processTask(task Input) Output {
 }
 
 func runDiscovery(client *winrm.Client, out Output) Output {
-	stdout, stderr, exitCode, err := client.RunWithString("hostname", "")
+	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
+	defer cancel()
+
+	stdout, stderr, exitCode, err := client.RunWithContextWithString(ctx, "hostname", "")
 	if err != nil {
 		out.Error = fmt.Sprintf("WinRM error: %v", err)
 		return out
@@ -247,10 +301,17 @@ try {
 func runPolling(client *winrm.Client, out Output) Output {
 	// Encode script to Base64 (UTF-16LE) for PowerShell -EncodedCommand
 	utf16 := unicode.UTF16(unicode.LittleEndian, unicode.IgnoreBOM)
-	encoded, _ := utf16.NewEncoder().String(metricsScript)
+	encoded, err := utf16.NewEncoder().String(metricsScript)
+	if err != nil {
+		out.Error = fmt.Sprintf("Failed to encode script: %v", err)
+		return out
+	}
 	b64 := base64.StdEncoding.EncodeToString([]byte(encoded))
 
-	stdout, stderr, exitCode, err := client.RunWithString(fmt.Sprintf("powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand %s", b64), "")
+	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
+	defer cancel()
+
+	stdout, stderr, exitCode, err := client.RunWithContextWithString(ctx, fmt.Sprintf("powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand %s", b64), "")
 	if err != nil {
 		out.Error = fmt.Sprintf("WinRM error: %v", err)
 		return out
@@ -260,7 +321,23 @@ func runPolling(client *winrm.Client, out Output) Output {
 		return out
 	}
 
+	data := sanitizeJSON(stdout)
+	if !json.Valid(data) {
+		out.Error = "invalid JSON returned by metrics script"
+		return out
+	}
+
 	out.Success = true
-	out.Data = json.RawMessage(stdout)
+	out.Data = data
 	return out
+}
+
+// sanitizeJSON strips a UTF-8 BOM and surrounding whitespace so the pool's
+// json.Unmarshal sees clean JSON. A single host with BOM noise must not
+// poison the whole batch. The BOM must go first: Go's TrimSpace does not
+// treat U+FEFF as space, so trimming first would leave the whitespace that
+// follows the BOM.
+func sanitizeJSON(raw string) []byte {
+	noBOM := bytes.TrimPrefix([]byte(raw), []byte{0xEF, 0xBB, 0xBF})
+	return bytes.TrimSpace(noBOM)
 }
