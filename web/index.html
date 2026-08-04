@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>NMS Dev Dashboard</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- ======================= Login ======================= -->
+  <section id="login-view" class="login-view">
+    <form id="login-form" class="login-card" autocomplete="on">
+      <div class="login-brand">
+        <span class="logo-mark" aria-hidden="true">N</span>
+        <div>
+          <h1 class="login-title">NMS Dev Dashboard</h1>
+          <p class="login-sub">Local developer console</p>
+        </div>
+      </div>
+      <label class="field">
+        <span class="field-label">Username</span>
+        <input id="login-username" type="text" name="username" value="admin"
+               required spellcheck="false" autocomplete="username">
+      </label>
+      <label class="field">
+        <span class="field-label">Password</span>
+        <input id="login-password" type="password" name="password" value="admin"
+               required autocomplete="current-password">
+      </label>
+      <div id="login-error" class="login-error" role="alert" hidden></div>
+      <button id="login-submit" class="btn btn-primary btn-block" type="submit">Sign in</button>
+      <p class="login-hint">Default admin credentials: <code>admin</code> / <code>admin</code></p>
+    </form>
+  </section>
+
+  <!-- ======================= App ======================= -->
+  <div id="app-view" hidden>
+    <nav class="topbar">
+      <div class="topbar-inner">
+        <div class="brand">
+          <span class="logo-mark" aria-hidden="true">N</span>
+          <span class="brand-name">NMS Dev Dashboard</span>
+        </div>
+        <div class="nav-tabs" role="tablist">
+          <button class="nav-tab is-active" data-view="topology" type="button" role="tab">Topology</button>
+          <button class="nav-tab" data-view="traces" type="button" role="tab">Traces</button>
+          <button class="nav-tab" data-view="explorer" type="button" role="tab">API Explorer</button>
+        </div>
+        <div class="topbar-right">
+          <span id="live-pill" class="live-pill" title="Backend connection status">
+            <span class="live-dot"></span><span id="live-label">connecting</span>
+          </span>
+          <button id="logout-btn" class="btn btn-ghost" type="button">Log out</button>
+        </div>
+      </div>
+    </nav>
+
+    <main class="main">
+      <section id="view-topology" class="view" data-view-panel="topology"></section>
+      <section id="view-traces" class="view" data-view-panel="traces" hidden></section>
+      <section id="view-explorer" class="view" data-view-panel="explorer" hidden></section>
+    </main>
+  </div>
+
+  <div id="toast-wrap" class="toast-wrap" aria-live="polite"></div>
+
+  <script src="app.js"></script>
+  <script src="topology.js"></script>
+  <script src="traces.js"></script>
+  <script src="explorer.js"></script>
+</body>
+</html>
