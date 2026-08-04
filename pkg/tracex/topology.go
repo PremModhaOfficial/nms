@@ -1,7 +1,8 @@
 package tracex
 
 // TopologyGraph is the static component graph served to the dashboard. It
-// mirrors ARCHITECTURE.md and the channel wiring in cmd/app/main.go initServices.
+// mirrors the ARCHITECTURE.md mermaid diagram and the channel wiring in
+// cmd/app/main.go initServices (10 nodes, 14 edges).
 //
 // Note: the Go type is TopologyGraph because Go shares one namespace for types
 // and functions; Topology() is the accessor.
@@ -27,18 +28,13 @@ type Edge struct {
 // Topology returns the static NMS component graph. Node IDs are the exact
 // contract the exporter uses for ComponentIDs.
 //
-// Edges settled from initServices (channel producer -> consumer):
-//   - crudRequestChan: API -> EntityService (also read by Scheduler/Poller/HealthMonitor)
-//   - provisioningEventChan: API -> EntityService (carries trigger_discovery AND
-//     provision_device; EntityService consumes it, NOT Discovery or HealthMonitor)
-//   - metricRequestChan: API -> MetricsService
-//   - deviceChan: EntityService -> Scheduler
-//   - discProfileChan: EntityService -> DiscoveryService (EventRunDiscovery)
-//   - discResultChan: DiscoveryService -> EntityService (results)
-//   - schedulerToPollerChan: Scheduler -> Poller
-//   - failureChan: Scheduler + MetricsService -> HealthMonitor
-//   - pollResultChan: Poller -> MetricsService
-//   - OpDeactivateDevice: HealthMonitor -> EntityService (via crudRequestChan)
+// The graph replicates the ARCHITECTURE.md mermaid diagram: API, EntityService,
+// Scheduler, Poller, PluginWorkerPool, MetricsService, PostgreSQL, DiscoveryService,
+// DiscoveryWorkerPool, HealthMonitor. Edges map to the channel wiring in
+// cmd/app/main.go initServices (crudRequestChan, provisioningEventChan,
+// metricRequestChan, deviceChan, discProfileChan, discResultChan,
+// schedulerToPollerChan, failureChan, pollResultChan, OpDeactivateDevice) plus
+// the discovery pool's Jobs/Results hops.
 func Topology() TopologyGraph {
 	return TopologyGraph{
 		Nodes: []Node{
@@ -50,24 +46,25 @@ func Topology() TopologyGraph {
 			{ID: "metrics", Label: "MetricsService", Type: "service"},
 			{ID: "db", Label: "PostgreSQL", Type: "db"},
 			{ID: "discovery", Label: "DiscoveryService", Type: "service"},
+			{ID: "discoverypool", Label: "DiscoveryWorkerPool", Type: "service"},
 			{ID: "health", Label: "HealthMonitor", Type: "service"},
 		},
 		Edges: []Edge{
-			{From: "api", To: "entity", Label: "crudRequest"},
-			{From: "api", To: "entity", Label: "event.publish"}, // provisioningEventChan: trigger_discovery + provision_device
-			{From: "api", To: "metrics", Label: "metricRequest"},
+			// Mirrors ARCHITECTURE.md mermaid exactly (10 nodes, 14 edges).
+			{From: "api", To: "entity", Label: "Request/Reply"},
+			{From: "api", To: "metrics", Label: "Request/Reply"},
 			{From: "entity", To: "db", Label: "sqlx"},
-			{From: "entity", To: "scheduler", Label: "deviceEvents"},
-			{From: "entity", To: "discovery", Label: "run_discovery"}, // discProfileChan
-			{From: "discovery", To: "entity", Label: "discResult"},    // discResultChan
-			{From: "discovery", To: "pluginpool", Label: "jobs"},
-			{From: "scheduler", To: "poller", Label: "schedulerToPollerChan"},
-			{From: "scheduler", To: "health", Label: "failureChan"},
-			{From: "poller", To: "pluginpool", Label: "jobs"},
-			{From: "pluginpool", To: "metrics", Label: "pollResultChan"},
-			{From: "pluginpool", To: "health", Label: "failureChan"}, // failure via metrics
+			{From: "entity", To: "scheduler", Label: "Events"},
+			{From: "entity", To: "discovery", Label: "Events"},
+			{From: "scheduler", To: "poller", Label: "Devices"},
+			{From: "scheduler", To: "health", Label: "Failures"},
+			{From: "poller", To: "pluginpool", Label: "Jobs"},
+			{From: "pluginpool", To: "metrics", Label: "Results"},
+			{From: "pluginpool", To: "health", Label: "Results"},
 			{From: "metrics", To: "db", Label: "pgx.CopyFrom"},
 			{From: "health", To: "entity", Label: "OpDeactivateDevice"},
+			{From: "discovery", To: "discoverypool", Label: "Jobs"},
+			{From: "discoverypool", To: "entity", Label: "Results"},
 		},
 	}
 }
@@ -76,7 +73,7 @@ func Topology() TopologyGraph {
 // it to derive ComponentIDs so only real components reach the dashboard.
 func isNodeID(id string) bool {
 	switch id {
-	case "api", "entity", "scheduler", "poller", "pluginpool", "metrics", "db", "discovery", "health":
+	case "api", "entity", "scheduler", "poller", "pluginpool", "metrics", "db", "discovery", "discoverypool", "health":
 		return true
 	default:
 		return false
