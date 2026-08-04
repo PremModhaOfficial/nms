@@ -399,6 +399,13 @@
     }
     children.forEach(function (c) {
       if (c === null || c === undefined) return;
+      if (Array.isArray(c)) {
+        c.forEach(function (inner) {
+          if (inner === null || inner === undefined) return;
+          node.appendChild(inner.nodeType ? inner : document.createTextNode(String(inner)));
+        });
+        return;
+      }
       node.appendChild(c.nodeType ? c : document.createTextNode(String(c)));
     });
     return node;

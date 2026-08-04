@@ -75,7 +75,14 @@
   }
 
   function computeWaterfall(spans) {
-    var order = flattenTree(spans);
+    // Copy the spans before building the tree: spanTree/flattenTree stamp
+    // _children/_depth/_t0/_startPct onto the span objects, and the cached
+    // trace is re-rendered on every poll. Mutating it in place would grow the
+    // tree on each re-render (5 spans -> 10 -> 20 -> ...).
+    var copies = spans.map(function (s) {
+      return Object.assign({}, s, { events: s.events, attributes: s.attributes });
+    });
+    var order = flattenTree(copies);
     var maxEnd = order.reduce(function (m, s) { return Math.max(m, s._t0 + s._dur); }, 0) || 1;
     order.forEach(function (s) {
       s._startPct = Math.max(0, Math.min(100, (s._t0 / maxEnd) * 100));
