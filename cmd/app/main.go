@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"nms/pkg/Services/scheduling"
 
 	"nms/pkg/config"
+	"nms/pkg/tracex"
 
 	"nms/pkg/api"
 	"nms/pkg/database"
@@ -52,6 +54,11 @@ const (
 func main() {
 	initLogger()
 	conf := loadConfig()
+
+	// Initialize the trace store and its span exporter. The returned shutdown
+	// hook flushes pending spans at exit.
+	shutdown := tracex.Init()
+	defer shutdown()
 
 	// Fail fast on insecure secrets in production; warn otherwise.
 	if err := conf.ValidateSecrets(); err != nil {
@@ -306,14 +313,14 @@ func startServices(ctx context.Context, svc *services) {
 }
 
 func initRouter(conf *config.Config, auth *api.JwtAuth, channels *apiChannels) http.Handler {
-	mux := http.NewServeMux()
+	apiMux := http.NewServeMux()
 
 	// Public routes (no auth)
-	mux.HandleFunc("POST /login", auth.LoginHandler)
+	apiMux.HandleFunc("POST /login", auth.LoginHandler)
 
 	// Protected routes. Every pattern is wrapped in the JWT middleware.
 	protect := func(pattern string, h http.Handler) {
-		mux.Handle(pattern, auth.JWTMiddleware()(h))
+		apiMux.Handle(pattern, auth.JWTMiddleware()(h))
 	}
 	api.RegisterEntityRoutes[models.CredentialProfile](protect, "/api/v1/credentials", "CredentialProfile", conf.EncryptionKey, channels.crudRequest)
 	api.RegisterEntityRoutes[models.Device](protect, "/api/v1/devices", "Device", conf.EncryptionKey, channels.crudRequest)
@@ -322,9 +329,48 @@ func initRouter(conf *config.Config, auth *api.JwtAuth, channels *apiChannels) h
 	protect("POST /api/v1/discovery_profiles/{id}/run", api.RunDiscoveryHandler(channels.provisioningEvent, channels.crudRequest))
 	protect("POST /api/v1/devices/{id}/provision", api.ProvisionDeviceHandler(channels.provisioningEvent))
 
-	// Security headers and body cap apply to every route.
-	var h http.Handler = mux
-	h = api.SecurityHeaders()(h)
-	h = api.MaxBodyBytes(1 << 20)(h) // 1 MiB request body cap
-	return h
+	// Dev dashboard API (traces + topology), same JWT protection as the rest.
+	protect("GET /api/v1/topology", http.HandlerFunc(api.TopologyHandler))
+	protect("GET /api/v1/traces", http.HandlerFunc(api.TracesListHandler))
+	protect("GET /api/v1/traces/{id}", http.HandlerFunc(api.TraceGetHandler))
+
+	// Security headers and body cap apply to the API surface only. The static
+	// dashboard gets its own looser CSP below, so the API keeps the strict
+	// default-src 'none' policy.
+	var apiHandler http.Handler = apiMux
+	apiHandler = api.SecurityHeaders()(apiHandler)
+	apiHandler = api.MaxBodyBytes(1 << 20)(apiHandler) // 1 MiB request body cap
+
+	// Longest-pattern wins on the routing mux, so /api/ and /login keep
+	// precedence over "/" (the static dashboard).
+	root := http.NewServeMux()
+	root.Handle("/api/", apiHandler)
+	root.Handle("/login", apiHandler)
+	root.Handle("/", dashboardHandler())
+
+	// Trace capture wraps everything, outermost, so auth failures and 5xx
+	// responses are traced too.
+	return api.TraceMiddleware()(root)
+}
+
+// dashboardHandler serves the embedded dev dashboard. Extensionless paths
+// fall back to index.html (SPA), everything else goes to the file server. The
+// CSP is loosened only for this handler so the dashboard can run script, but
+// still same-origin only.
+func dashboardHandler() http.Handler {
+	fileServer := http.FileServer(WebFiles())
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Security-Policy",
+			"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+
+		if filepath.Ext(r.URL.Path) == "" {
+			// SPA fallback: serve index.html for extensionless client routes.
+			clone := r.Clone(r.Context())
+			clone.URL.Path = "/"
+			fileServer.ServeHTTP(w, clone)
+			return
+		}
+		fileServer.ServeHTTP(w, r)
+	})
 }
