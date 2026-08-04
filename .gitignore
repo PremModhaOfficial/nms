@@ -13,3 +13,5 @@
 
 # Local scratch
 winrm-pin
+.dev-dashboard.pid
+app.log
