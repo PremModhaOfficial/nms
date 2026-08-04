@@ -369,8 +369,18 @@
 
   // Tiny DOM builder: el('div', {class:'x', onclick: fn, text:'hi'}, child...)
   // Event handlers attached via addEventListener (CSP-safe, no inline attrs).
+  // SVG tags are created in the SVG namespace so case-sensitive attributes
+  // (viewBox, markerWidth, textAnchor, ...) survive without being lowercased.
+  var SVG_TAGS = {
+    svg: 1, defs: 1, marker: 1, path: 1, g: 1, rect: 1, circle: 1,
+    text: 1, line: 1, polyline: 1, polygon: 1, use: 1, clipPath: 1,
+    linearGradient: 1, radialGradient: 1, stop: 1, image: 1, tspan: 1, title: 1
+  };
+  var SVG_NS = 'http://www.w3.org/2000/svg';
   function el(tag, attrs) {
-    var node = document.createElement(tag);
+    var node = SVG_TAGS[tag]
+      ? document.createElementNS(SVG_NS, tag)
+      : document.createElement(tag);
     var children = Array.prototype.slice.call(arguments, 2);
     if (attrs && typeof attrs === 'object') {
       Object.keys(attrs).forEach(function (k) {
