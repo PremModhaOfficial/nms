@@ -1,4 +1,4 @@
-.PHONY: build run dev stop clean help db-setup first-run
+.PHONY: build run dev stop clean help db-setup first-run dashboard dashboard-smoke
 
 # Load environment variables from .env file
 ifneq (,$(wildcard ./.env))
@@ -41,6 +41,14 @@ dev: stop build
 	@echo "Starting in development mode..."
 	@./start.sh
 
+## dashboard: One-shot dev dashboard (db up, build, seed if empty, run, wait, print URL)
+dashboard:
+	@./scripts/dev-dashboard.sh
+
+## dashboard-smoke: Dev dashboard plus smoke test (login + devices), fails on error
+dashboard-smoke:
+	@./scripts/dev-dashboard.sh --smoke
+
 ## stop: Stop any running nms-app instances
 stop:
 	@echo "Stopping NMS Server..."
@@ -58,4 +66,4 @@ help:
 	@echo "Usage: make [target]"
 	@echo ""
 	@echo "Targets:"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
+	@grep -hE '^## [a-zA-Z_-]+:.*' $(MAKEFILE_LIST) | sed 's/^## //' | sort | awk 'BEGIN {FS = ": "}; {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
