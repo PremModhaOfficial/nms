@@ -3,6 +3,32 @@
 
 A lightweight, extensible network management system for discovery, monitoring, and metric collection.
 
+## Component Diagram
+
+```mermaid
+graph TD
+    API[API Layer] -->|Request/Reply| ES[EntityService]
+    API -->|Request/Reply| MS[MetricsService]
+
+    ES -->|sqlx| DB[(PostgreSQL)]
+    ES -->|Events| S[Scheduler]
+    ES -->|Events| DS[DiscoveryService]
+
+    S -->|Devices| P[Poller]
+    S -->|Failures| HM[HealthMonitor]
+    P -->|Jobs| PW[PluginWorkerPool]
+    PW -->|Results| MS
+    PW -->|Results| HM
+
+    MS -->|pgx.CopyFrom| DB
+    HM -->|OpDeactivateDevice| ES
+
+    DS -->|Jobs| DW[DiscoveryWorkerPool]
+    DW -->|Results| ES
+```
+
+> Full architecture details in [`ARCHITECTURE.md`](ARCHITECTURE.md). A live version of this topology runs in the dev dashboard (see [`docs/dev-dashboard.md`](docs/dev-dashboard.md)).
+
 ## Getting Started
 
 Follow these steps to set up and run the NMS on a new machine.
