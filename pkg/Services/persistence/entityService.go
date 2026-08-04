@@ -14,15 +14,20 @@ import (
 	"nms/pkg/database"
 	"nms/pkg/models"
 	"nms/pkg/plugin"
+	"nms/pkg/tracex"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jmoiron/sqlx"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
-// sendEvent sends an event to a channel without blocking.
+// sendEvent sends an event to a channel without blocking, stamping it with the
+// current span context so the receiving service can continue the trace.
 // If the channel is full, it logs a warning and drops the event.
-func sendEvent(ch chan<- models.Event, event models.Event) {
+func sendEvent(ctx context.Context, ch chan<- models.Event, event models.Event) {
+	event.TraceID, event.SpanID = models.SpanContextIDs(ctx)
 	select {
 	case ch <- event:
 	default:
@@ -91,13 +96,45 @@ func (writer *EntityService) Run(ctx context.Context) {
 			slog.Info("Stopping entity writer", "component", "EntityService")
 			return
 		case result := <-writer.discoveryResultsChan:
-			writer.safe("provisionFromDiscovery", func() { writer.provisionFromDiscovery(ctx, result) })
+			writer.safe("provisionFromDiscovery", func() {
+				rctx, span := tracex.Start(models.RemoteContext(result.TraceID, result.SpanID), "entity", "entityService.discoveryResult")
+				defer span.End()
+				writer.provisionFromDiscovery(rctx, result)
+			})
 		case event := <-writer.eventsChan:
-			writer.safe("handleEvent", func() { writer.handleEvent(ctx, event) })
+			writer.safe("handleEvent", func() {
+				ectx, span := tracex.Start(models.RemoteContext(event.TraceID, event.SpanID), "entity", "entityService.handleEvent")
+				defer span.End()
+				span.SetAttributes(attribute.String("nms.event_type", string(event.Type)))
+				writer.handleEvent(ectx, event)
+			})
 		case req := <-writer.requestsChan:
-			writer.safe("handleCrudRequest", func() { writer.handleCrudRequest(ctx, req) })
+			writer.safe("handleCrudRequest", func() {
+				qctx, span := tracex.Start(models.RemoteContext(req.TraceID, req.SpanID), "entity", "entityService."+entitySpanOp(req.Operation))
+				defer span.End()
+				span.SetAttributes(attribute.String("nms.op", req.Operation))
+				if req.EntityType != "" {
+					span.SetAttributes(attribute.String("nms.entity_type", req.EntityType))
+				}
+				writer.handleCrudRequest(qctx, req)
+			})
 		}
 	}
+}
+
+// entitySpanOp maps a request operation to its span-name suffix, so the
+// dashboard shows entityService.deactivate rather than the raw wire op.
+func entitySpanOp(op string) string {
+	if op == models.OpDeactivateDevice {
+		return "deactivate"
+	}
+	return op
+}
+
+// dbError marks the current span (if any) with a db.error event so the
+// dashboard can render the failing entity -> db edge.
+func dbError(ctx context.Context) {
+	trace.SpanFromContext(ctx).AddEvent("db.error")
 }
 
 // safe runs fn with panic containment so a single bad input cannot kill the
@@ -139,6 +176,7 @@ func (writer *EntityService) provisionFromDiscovery(ctx context.Context, result 
 	}
 	if err != nil && !isNotFound(err) {
 		// A real DB failure must not be mistaken for "no duplicate".
+		dbError(ctx)
 		slog.Error("Failed to check existing device", "component", "EntityService", "target", result.Target, "port", result.Port, "error", err)
 		return
 	}
@@ -147,6 +185,7 @@ func (writer *EntityService) provisionFromDiscovery(ctx context.Context, result 
 	// silently create a device that the poller can never poll.
 	cred, credErr := writer.credentialRepo.Get(ctx, result.CredentialProfileID)
 	if credErr != nil {
+		dbError(ctx)
 		slog.Error("Failed to fetch credential profile, skipping provisioning", "component", "EntityService", "credential_id", result.CredentialProfileID, "error", credErr)
 		return
 	}
@@ -181,6 +220,7 @@ func (writer *EntityService) provisionFromDiscovery(ctx context.Context, result 
 			slog.Debug("Device already exists (caught by DB constraint)", "component", "EntityService", "target", result.Target, "port", result.Port)
 			return
 		}
+		dbError(ctx)
 		slog.Error("Failed to create device", "component", "EntityService", "target", result.Target, "error", err)
 		return
 	}
@@ -190,7 +230,7 @@ func (writer *EntityService) provisionFromDiscovery(ctx context.Context, result 
 
 	if initialStatus == "active" {
 		// Publish event so scheduler picks it up
-		sendEvent(writer.deviceEvents, models.Event{
+		sendEvent(ctx, writer.deviceEvents, models.Event{
 			Type:    models.EventCreate,
 			Payload: createdDevice,
 		})
@@ -222,6 +262,7 @@ func (writer *EntityService) triggerDiscovery(ctx context.Context, event models.
 
 	profile, err := writer.discoveryProfileRepo.Get(ctx, cmd.DiscoveryProfileID)
 	if err != nil {
+		dbError(ctx)
 		slog.Error("Failed to fetch discovery profile", "component", "EntityService", "profile_id", cmd.DiscoveryProfileID, "error", err)
 		return
 	}
@@ -231,7 +272,7 @@ func (writer *EntityService) triggerDiscovery(ctx context.Context, event models.
 		profile.CredentialProfile = cred
 	}
 
-	sendEvent(writer.discoveryProfileEvents, models.Event{
+	sendEvent(ctx, writer.discoveryProfileEvents, models.Event{
 		Type:    models.EventRunDiscovery,
 		Payload: profile,
 	})
@@ -249,6 +290,7 @@ func (writer *EntityService) provisionDevice(ctx context.Context, event models.E
 
 	device, err := writer.deviceRepo.Get(ctx, cmd.DeviceID)
 	if err != nil {
+		dbError(ctx)
 		slog.Error("Failed to fetch device", "component", "EntityService", "device_id", cmd.DeviceID, "error", err)
 		return
 	}
@@ -261,6 +303,7 @@ func (writer *EntityService) provisionDevice(ctx context.Context, event models.E
 
 	updatedDevice, err := writer.deviceRepo.Update(ctx, cmd.DeviceID, device)
 	if err != nil {
+		dbError(ctx)
 		slog.Error("Failed to update device", "component", "EntityService", "device_id", cmd.DeviceID, "error", err)
 		return
 	}
@@ -268,7 +311,7 @@ func (writer *EntityService) provisionDevice(ctx context.Context, event models.E
 	// Update cache with activated device
 	writer.updateDeviceCache(models.OpUpdate, updatedDevice)
 
-	sendEvent(writer.deviceEvents, models.Event{
+	sendEvent(ctx, writer.deviceEvents, models.Event{
 		Type:    models.EventUpdate,
 		Payload: updatedDevice,
 	})
@@ -288,10 +331,16 @@ func handleCRUD[T models.TableNamer](
 	switch req.Operation {
 	case models.OpList:
 		data, err := repo.List(ctx)
+		if err != nil {
+			dbError(ctx)
+		}
 		resp.Data, resp.Error = data, err
 
 	case models.OpGet:
 		data, err := repo.Get(ctx, req.ID)
+		if err != nil {
+			dbError(ctx)
+		}
 		resp.Data, resp.Error = data, err
 
 	case models.OpCreate:
@@ -301,8 +350,11 @@ func handleCRUD[T models.TableNamer](
 			return resp
 		}
 		data, err := repo.Create(ctx, entity)
+		if err != nil {
+			dbError(ctx)
+		}
 		if err == nil && eventCh != nil {
-			sendEvent(eventCh, models.Event{Type: models.EventCreate, Payload: data})
+			sendEvent(ctx, eventCh, models.Event{Type: models.EventCreate, Payload: data})
 		}
 		resp.Data, resp.Error = data, err
 
@@ -313,22 +365,34 @@ func handleCRUD[T models.TableNamer](
 			return resp
 		}
 		data, err := repo.Update(ctx, req.ID, entity)
+		if err != nil {
+			dbError(ctx)
+		}
 		if err == nil && eventCh != nil {
-			sendEvent(eventCh, models.Event{Type: models.EventUpdate, Payload: data})
+			sendEvent(ctx, eventCh, models.Event{Type: models.EventUpdate, Payload: data})
 		}
 		resp.Data, resp.Error = data, err
 
 	case models.OpDelete:
 		if eventCh != nil {
 			// Fetch entity before delete for event payload
-			entity, _ := repo.Get(ctx, req.ID)
-			err := repo.Delete(ctx, req.ID)
+			entity, err := repo.Get(ctx, req.ID)
+			if err != nil {
+				dbError(ctx)
+			}
+			err = repo.Delete(ctx, req.ID)
+			if err != nil {
+				dbError(ctx)
+			}
 			if err == nil && entity != nil {
-				sendEvent(eventCh, models.Event{Type: models.EventDelete, Payload: entity})
+				sendEvent(ctx, eventCh, models.Event{Type: models.EventDelete, Payload: entity})
 			}
 			resp.Error = err
 		} else {
-			resp.Error = repo.Delete(ctx, req.ID)
+			if err := repo.Delete(ctx, req.ID); err != nil {
+				dbError(ctx)
+				resp.Error = err
+			}
 		}
 
 	default:
@@ -351,10 +415,16 @@ func (writer *EntityService) handleDiscoveryProfileCRUD(ctx context.Context, req
 	switch req.Operation {
 	case models.OpList:
 		data, err := writer.discoveryProfileRepo.List(ctx)
+		if err != nil {
+			dbError(ctx)
+		}
 		resp.Data, resp.Error = data, err
 
 	case models.OpGet:
 		data, err := writer.discoveryProfileRepo.Get(ctx, req.ID)
+		if err != nil {
+			dbError(ctx)
+		}
 		resp.Data, resp.Error = data, err
 
 	case models.OpCreate:
@@ -364,12 +434,15 @@ func (writer *EntityService) handleDiscoveryProfileCRUD(ctx context.Context, req
 			return resp
 		}
 		data, err := writer.discoveryProfileRepo.Create(ctx, entity)
+		if err != nil {
+			dbError(ctx)
+		}
 		if err == nil {
 			// Enrich with credential profile before publishing event
 			if cred, credErr := writer.credentialRepo.Get(ctx, data.CredentialProfileID); credErr == nil {
 				data.CredentialProfile = cred
 			}
-			sendEvent(writer.discoveryProfileEvents, models.Event{Type: models.EventCreate, Payload: data})
+			sendEvent(ctx, writer.discoveryProfileEvents, models.Event{Type: models.EventCreate, Payload: data})
 		}
 		resp.Data, resp.Error = data, err
 
@@ -380,20 +453,29 @@ func (writer *EntityService) handleDiscoveryProfileCRUD(ctx context.Context, req
 			return resp
 		}
 		data, err := writer.discoveryProfileRepo.Update(ctx, req.ID, entity)
+		if err != nil {
+			dbError(ctx)
+		}
 		if err == nil {
 			// Enrich with credential profile before publishing event
 			if cred, credErr := writer.credentialRepo.Get(ctx, data.CredentialProfileID); credErr == nil {
 				data.CredentialProfile = cred
 			}
-			sendEvent(writer.discoveryProfileEvents, models.Event{Type: models.EventUpdate, Payload: data})
+			sendEvent(ctx, writer.discoveryProfileEvents, models.Event{Type: models.EventUpdate, Payload: data})
 		}
 		resp.Data, resp.Error = data, err
 
 	case models.OpDelete:
-		entity, _ := writer.discoveryProfileRepo.Get(ctx, req.ID)
-		err := writer.discoveryProfileRepo.Delete(ctx, req.ID)
+		entity, err := writer.discoveryProfileRepo.Get(ctx, req.ID)
+		if err != nil {
+			dbError(ctx)
+		}
+		err = writer.discoveryProfileRepo.Delete(ctx, req.ID)
+		if err != nil {
+			dbError(ctx)
+		}
 		if err == nil && entity != nil {
-			sendEvent(writer.discoveryProfileEvents, models.Event{Type: models.EventDelete, Payload: entity})
+			sendEvent(ctx, writer.discoveryProfileEvents, models.Event{Type: models.EventDelete, Payload: entity})
 		}
 		resp.Error = err
 
@@ -692,6 +774,7 @@ func (writer *EntityService) handleGetCredential(req models.Request) models.Resp
 func (writer *EntityService) handleDeactivateDevice(ctx context.Context, deviceID int64) models.Response {
 	device, err := writer.deviceRepo.Get(ctx, deviceID)
 	if err != nil {
+		dbError(ctx)
 		return models.Response{Error: fmt.Errorf("device %d not found: %w", deviceID, err)}
 	}
 
@@ -699,6 +782,7 @@ func (writer *EntityService) handleDeactivateDevice(ctx context.Context, deviceI
 	device.Status = "inactive"
 	updatedDevice, err := writer.deviceRepo.Update(ctx, deviceID, device)
 	if err != nil {
+		dbError(ctx)
 		return models.Response{Error: fmt.Errorf("failed to deactivate device %d: %w", deviceID, err)}
 	}
 
@@ -706,7 +790,7 @@ func (writer *EntityService) handleDeactivateDevice(ctx context.Context, deviceI
 	writer.updateDeviceCache(models.OpUpdate, updatedDevice)
 
 	// Publish event for cache invalidation in Scheduler
-	sendEvent(writer.deviceEvents, models.Event{
+	sendEvent(ctx, writer.deviceEvents, models.Event{
 		Type:    models.EventUpdate,
 		Payload: updatedDevice,
 	})

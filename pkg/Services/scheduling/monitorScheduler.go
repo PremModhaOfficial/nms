@@ -10,6 +10,9 @@ import (
 	"time"
 
 	"nms/pkg/models"
+	"nms/pkg/tracex"
+
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // Scheduler manages the scheduling of devices based on deadlines.
@@ -114,6 +117,13 @@ func (sched *Scheduler) processDeviceEvent(event models.Event) {
 // schedule pops expired entries, fetches device details from EntityService,
 // performs fping, and dispatches qualified devices to Poller.
 func (sched *Scheduler) schedule(ctx context.Context) {
+	// One span per scheduling batch. The scheduler originates new work on each
+	// tick, so this is a fresh root span; the poller links back to it via the
+	// nms.previous_component attribute (the OutputChan carries []*models.Device,
+	// which has no trace fields).
+	ctx, span := tracex.Start(ctx, "scheduler", "scheduler.batch")
+	defer span.End()
+
 	now := time.Now()
 	slog.Debug("Checking deadlines", "component", "Scheduler", "now", now.Format(time.RFC3339), "queue_size", sched.queue.Len())
 
@@ -138,11 +148,14 @@ func (sched *Scheduler) schedule(ctx context.Context) {
 	// sched.entityReqChan (a shared input to EntityService), so sending is not
 	// itself blocking; the bounded wait for the reply is handled by models.Call.
 	replyCh := make(chan models.Response, 1)
-	resp, err := models.Call(ctx, sched.entityReqChan, models.Request{
+	req := models.Request{
 		Operation: models.OpGetBatch,
 		IDs:       deviceIDs,
 		ReplyCh:   replyCh,
-	})
+	}
+	// Forward the batch span so EntityService's handler joins the trace.
+	models.StampRequest(ctx, &req)
+	resp, err := models.Call(ctx, sched.entityReqChan, req)
 	if err != nil {
 		slog.Warn("Failed to get devices from EntityService", "component", "Scheduler", "error", err)
 		// Re-add entries back to queue to retry later
@@ -186,31 +199,42 @@ func (sched *Scheduler) schedule(ctx context.Context) {
 	qualified := make([]*models.Device, 0)
 	toRequeue := make([]*DeviceDeadline, 0, len(batchResp.ToPing)+len(batchResp.ToSkip))
 
-	// Process ToPing devices
+	// Process ToPing devices: each device gets a checkDevice span. This is the
+	// one per-device span we allow (reachability is a genuinely per-device
+	// operation); everything else stays batch-granular.
 	for _, dev := range batchResp.ToPing {
 		oldDeadline := deadlineMap[dev.ID]
 		newDeadline := oldDeadline.Add(time.Duration(dev.PollingIntervalSeconds) * time.Second)
+
+		dctx, dspan := tracex.Start(ctx, "scheduler", "scheduler.checkDevice")
+		dspan.SetAttributes(attribute.Int64("nms.device_id", dev.ID))
+		dspan.SetAttributes(attribute.String("nms.target", dev.IPAddress))
 
 		if reachableIPs[dev.IPAddress] {
 			qualified = append(qualified, dev)
 			slog.Info("Device qualified (ping OK)", "component", "Scheduler", "device_id", dev.ID, "next_deadline", newDeadline.Format(time.RFC3339))
 		} else {
 			slog.Debug("Device not reachable", "component", "Scheduler", "device_id", dev.ID, "ip", dev.IPAddress)
-			// Emit failure event to HealthMonitor. Guarded so a stopped
-			// consumer cannot wedge the scheduler during shutdown.
-			select {
-			case <-ctx.Done():
-				return
-			case sched.FailureChan <- models.Event{
+			// Emit failure event to HealthMonitor, stamped with this span's
+			// context so the health trace continues across the channel. Guarded
+			// so a stopped consumer cannot wedge the scheduler during shutdown.
+			ev := models.Event{
 				Type: models.EventDeviceFailure,
 				Payload: &models.DeviceFailureEvent{
 					DeviceID:  dev.ID,
 					Timestamp: time.Now(),
 					Reason:    "ping",
 				},
-			}:
+			}
+			ev.TraceID, ev.SpanID = models.SpanContextIDs(dctx)
+			select {
+			case <-ctx.Done():
+				dspan.End()
+				return
+			case sched.FailureChan <- ev:
 			}
 		}
+		dspan.End()
 
 		// Collect for batch re-add
 		toRequeue = append(toRequeue, &DeviceDeadline{DeviceID: dev.ID, Deadline: newDeadline})

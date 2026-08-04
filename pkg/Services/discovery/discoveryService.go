@@ -17,6 +17,9 @@ import (
 	"nms/pkg/models"
 	"nms/pkg/plugin"
 	"nms/pkg/pluginWorker"
+	"nms/pkg/tracex"
+
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // MaxExpandHosts caps how many IPs a single target may expand to (a /16 block).
@@ -113,7 +116,12 @@ func (discovery *DiscoveryService) processEvent(ctx context.Context, event model
 		slog.Info("Discovery profile saved", "component", "DiscoveryService", "profile_name", profile.Name)
 	case models.EventRunDiscovery:
 		slog.Info("Running discovery for profile (explicit trigger)", "component", "DiscoveryService", "profile_name", profile.Name)
-		discovery.runDiscovery(ctx, profile)
+		// Continue the trace from EntityService's handleEvent span, carried on
+		// the event's TraceID/SpanID fields. One span per discovery run.
+		dctx, dspan := tracex.Start(models.RemoteContext(event.TraceID, event.SpanID), "discovery", "discovery.run")
+		defer dspan.End()
+		dspan.SetAttributes(attribute.String("nms.target", profile.Target))
+		discovery.runDiscovery(dctx, profile)
 	case models.EventDelete:
 		slog.Info("Profile deleted", "component", "DiscoveryService", "profile_name", profile.Name)
 		// Nothing to do - discovery is one-shot
@@ -237,13 +245,17 @@ func (discovery *DiscoveryService) runDiscovery(ctx context.Context, profile *mo
 	}
 	discovery.pendingMu.Unlock()
 
-	// 5. Build tasks
+	// 5. Build tasks, stamped with the discovery.run span so the pool's
+	// pluginPool.execute span becomes its child.
+	traceID, spanID := models.SpanContextIDs(ctx)
 	tasks := make([]plugin.Task, 0, len(ips))
 	for _, ip := range ips {
 		tasks = append(tasks, plugin.Task{
 			Target:      ip,
 			Port:        profile.Port,
 			Credentials: creds,
+			TraceID:     traceID,
+			SpanID:      spanID,
 		})
 	}
 

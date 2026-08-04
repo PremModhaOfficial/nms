@@ -10,6 +10,9 @@ import (
 	"nms/pkg/models"
 	"nms/pkg/plugin"
 	"nms/pkg/pluginWorker"
+	"nms/pkg/tracex"
+
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // Poller manages plugin execution for polling devices.
@@ -109,6 +112,12 @@ func (poller *Poller) Run(ctx context.Context) {
 			}
 			slog.Info("Received devices from scheduler", "component", "Poller", "count", len(devices))
 
+			// The InputChan carries []*models.Device (no trace fields), so the
+			// poller starts its own root span per batch and links it back to the
+			// scheduler via nms.previous_component.
+			bctx, bspan := tracex.Start(ctx, "poller", "poller.processBatch")
+			bspan.SetAttributes(attribute.String("nms.previous_component", "scheduler"))
+
 			// Group devices by PluginID
 			grouped := poller.groupByProtocol(devices)
 
@@ -120,11 +129,12 @@ func (poller *Poller) Run(ctx context.Context) {
 					continue
 				}
 
-				tasks := poller.createTasks(ctx, deviceList)
+				tasks := poller.createTasks(bctx, deviceList)
 				if !poller.pool.Submit(binPath, tasks) {
 					slog.Warn("Failed to submit poll batch: pool shutting down", "component", "Poller", "plugin_id", pluginID)
 				}
 			}
+			bspan.End()
 		}
 	}
 }
@@ -143,11 +153,13 @@ func (poller *Poller) groupByProtocol(devices []*models.Device) map[string][]*mo
 // stalled EntityService cannot wedge the poll pipeline forever.
 func (poller *Poller) getCredential(ctx context.Context, profileID int64) *models.CredentialProfile {
 	replyCh := make(chan models.Response, 1)
-	resp, err := models.Call(ctx, poller.entityReqChan, models.Request{
+	req := models.Request{
 		Operation: models.OpGetCredential,
 		ID:        profileID,
 		ReplyCh:   replyCh,
-	})
+	}
+	models.StampRequest(ctx, &req)
+	resp, err := models.Call(ctx, poller.entityReqChan, req)
 	if err != nil {
 		slog.Error("Failed to get credential", "component", "Poller", "profile_id", profileID, "error", err)
 		return nil
@@ -198,6 +210,9 @@ func (poller *Poller) createTasks(ctx context.Context, devices []*models.Device)
 			Port:        d.Port,
 			Credentials: payload,
 		}
+		// Stamp the task with the batch span so the pool's pluginPool.execute
+		// span becomes a child of poller.processBatch.
+		task.TraceID, task.SpanID = models.SpanContextIDs(ctx)
 		tasks = append(tasks, task)
 	}
 	return tasks

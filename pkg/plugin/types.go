@@ -11,6 +11,11 @@ type Task struct {
 	Target      string          `json:"target"`                // IP address or hostname
 	Port        int             `json:"port"`                  // Target port
 	Credentials json.RawMessage `json:"credentials,omitempty"` // Decrypted JSON payload (protocol-specific)
+
+	// Span context of the submitting service, so the pool can continue the
+	// distributed trace while executing the batch.
+	TraceID string `json:"trace_id,omitempty"`
+	SpanID  string `json:"span_id,omitempty"`
 }
 
 // Result is the output from a plugin binary.
@@ -23,7 +28,22 @@ type Result struct {
 	Hostname string          `json:"hostname,omitempty"` // Discovery mode
 	Data     json.RawMessage `json:"data,omitempty"`     // Polling mode (hierarchical raw data)
 
+	// Span context of the pool execution, so the consuming service can continue
+	// the distributed trace from the pool result.
+	TraceID string `json:"trace_id,omitempty"`
+	SpanID  string `json:"span_id,omitempty"`
+
 	// Internal fields for provisioning context (set by discovery service)
 	DiscoveryProfileID  int64 `json:"-"`
 	CredentialProfileID int64 `json:"-"`
+}
+
+// SpanContextIDs returns the stamped OTel span context, letting the pool
+// continue the producer's trace without coupling to models.
+func (t Task) SpanContextIDs() (string, string) { return t.TraceID, t.SpanID }
+
+// SetSpanContextIDs stamps the OTel span context onto a result so the
+// consuming service can continue the trace across the result channel.
+func (r *Result) SetSpanContextIDs(traceID, spanID string) {
+	r.TraceID, r.SpanID = traceID, spanID
 }

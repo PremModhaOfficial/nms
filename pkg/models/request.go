@@ -23,6 +23,11 @@ type Request struct {
 	IDs        []int64       // For batch operations (get_batch)
 	Payload    interface{}   // Entity or query params
 	ReplyCh    chan Response // Caller waits on this for synchronous reply
+
+	// Span context of the sender, so the receiving service can continue the
+	// distributed trace across the channel boundary.
+	TraceID string `json:"trace_id,omitempty"`
+	SpanID  string `json:"span_id,omitempty"`
 }
 
 // Response contains result or error from service layer

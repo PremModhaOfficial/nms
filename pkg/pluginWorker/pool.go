@@ -10,6 +10,12 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"nms/pkg/models"
+	"nms/pkg/tracex"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // pluginExecTimeout bounds how long a single plugin invocation may run.
@@ -38,6 +44,18 @@ type PluginWorkerPool[T any, R any] struct {
 type Job[T any] struct {
 	BinPath string // Absolute path to plugin binary
 	Tasks   []T
+}
+
+// SpanContextProvider is implemented by task types that carry OTel span
+// context, so the pool can continue the producer's trace across the channel.
+type SpanContextProvider interface {
+	SpanContextIDs() (traceID, spanID string)
+}
+
+// SpanContextSetter is implemented by result types that carry OTel span
+// context, so the pool can stamp results for the consuming service.
+type SpanContextSetter interface {
+	SetSpanContextIDs(traceID, spanID string)
 }
 
 // NewPool creates a new generic pluginWorker pool
@@ -127,7 +145,7 @@ func (pool *PluginWorkerPool[T, R]) worker(id int, wg *sync.WaitGroup) {
 				return
 			}
 
-			results := pool.executePlugin(job)
+			results := pool.executeJob(job)
 			// Guard the result send against shutdown: if the consumer has
 			// stopped, drop the results instead of leaking the worker forever.
 			select {
@@ -138,6 +156,34 @@ func (pool *PluginWorkerPool[T, R]) worker(id int, wg *sync.WaitGroup) {
 			}
 		}
 	}
+}
+
+// executeJob runs a batch under a pluginPool.execute span, continuing the
+// producer's trace from the first task's stamped span context. Results are
+// stamped with the execute span's ids so the consumer can continue the trace.
+func (pool *PluginWorkerPool[T, R]) executeJob(job Job[T]) (results []R) {
+	ctx := context.Background()
+	if len(job.Tasks) > 0 {
+		if carrier, ok := any(job.Tasks[0]).(SpanContextProvider); ok {
+			traceID, spanID := carrier.SpanContextIDs()
+			ctx = models.RemoteContext(traceID, spanID)
+		}
+	}
+
+	ctx, span := tracex.Start(ctx, "pluginpool", "pluginPool.execute")
+	defer span.End()
+	span.SetAttributes(attribute.String("nms.plugin", pool.poolName))
+
+	results = pool.executePlugin(job)
+
+	traceID, spanID := models.SpanContextIDs(ctx)
+	for i := range results {
+		if setter, ok := any(&results[i]).(SpanContextSetter); ok {
+			setter.SetSpanContextIDs(traceID, spanID)
+		}
+	}
+	span.AddEvent("batch.result", trace.WithAttributes(attribute.Int("count", len(results))))
+	return results
 }
 
 // executePlugin runs the plugin binary with the batch of tasks.

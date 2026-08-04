@@ -21,6 +21,11 @@ const (
 type Event struct {
 	Type    EventType   `json:"type"`
 	Payload interface{} `json:"payload"`
+
+	// Span context of the sender, so the receiving service can continue the
+	// distributed trace across the channel boundary.
+	TraceID string `json:"trace_id,omitempty"`
+	SpanID  string `json:"span_id,omitempty"`
 }
 
 // DiscoveryTriggerEvent represents a command to trigger discovery

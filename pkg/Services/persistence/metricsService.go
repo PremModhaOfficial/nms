@@ -13,9 +13,11 @@ import (
 
 	"nms/pkg/models"
 	"nms/pkg/plugin"
+	"nms/pkg/tracex"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -210,6 +212,16 @@ func (s *MetricsService) worker(ctx context.Context, id int, wg *sync.WaitGroup)
 
 // handleWrite persists polling metrics using batch insert.
 func (s *MetricsService) handleWrite(ctx context.Context, results []plugin.Result) {
+	if len(results) == 0 {
+		return
+	}
+
+	// Continue the trace from the pool's execute span, stamped on each result.
+	wctx, span := tracex.Start(models.RemoteContext(results[0].TraceID, results[0].SpanID), "metrics", "metrics.write")
+	defer span.End()
+	span.SetAttributes(attribute.Int("nms.result_count", len(results)))
+	ctx = wctx
+
 	slog.Debug("Processing write job", "component", "MetricsService", "count", len(results))
 
 	// Separate successful results from failures
@@ -233,6 +245,8 @@ func (s *MetricsService) handleWrite(ctx context.Context, results []plugin.Resul
 					Reason:    "poll",
 				},
 			}
+			// Stamp with this span so the health trace continues across the channel.
+			event.TraceID, event.SpanID = models.SpanContextIDs(ctx)
 			select {
 			case <-ctx.Done():
 				return
@@ -250,6 +264,7 @@ func (s *MetricsService) handleWrite(ctx context.Context, results []plugin.Resul
 	// unbounded result set never allocates one giant write.
 	conn, err := s.writeDB.Conn(ctx)
 	if err != nil {
+		dbError(ctx)
 		slog.Error("Failed to get write connection", "component", "MetricsService", "error", err)
 		return
 	}
@@ -274,6 +289,7 @@ func (s *MetricsService) handleWrite(ctx context.Context, results []plugin.Resul
 			return copyErr
 		})
 		if err != nil {
+			dbError(ctx)
 			slog.Error("Batch insert failed", "component", "MetricsService", "chunk_start", start, "error", err)
 			return
 		}
@@ -289,6 +305,11 @@ func (s *MetricsService) handleWrite(ctx context.Context, results []plugin.Resul
 // handleQuery handles metrics query requests.
 func (s *MetricsService) handleQuery(ctx context.Context, req models.Request) {
 	var resp models.Response
+
+	// Continue the trace from the requester's span, stamped on the request.
+	qctx, span := tracex.Start(models.RemoteContext(req.TraceID, req.SpanID), "metrics", "metrics.query")
+	defer span.End()
+	ctx = qctx
 
 	query, ok := req.Payload.(*MetricQueryRequest)
 	if !ok {
@@ -360,6 +381,7 @@ func (s *MetricsService) getMetricsBatch(ctx context.Context, deviceIDs []int64,
 
 	stmt, err := s.readDB.PrepareContext(ctx, sqlQuery)
 	if err != nil {
+		dbError(ctx)
 		return nil, fmt.Errorf("failed to prepare statement: %w", err)
 	}
 	defer stmt.Close()
@@ -370,6 +392,7 @@ func (s *MetricsService) getMetricsBatch(ctx context.Context, deviceIDs []int64,
 	for _, deviceID := range deviceIDs {
 		rows, err := stmt.QueryContext(ctx, deviceID, query.Start, query.End, limit)
 		if err != nil {
+			dbError(ctx)
 			return nil, fmt.Errorf("query failed for device %d: %w", deviceID, err)
 		}
 
@@ -378,6 +401,7 @@ func (s *MetricsService) getMetricsBatch(ctx context.Context, deviceIDs []int64,
 			var mr MetricResult
 			if err := rows.Scan(&mr.Timestamp, &mr.Value); err != nil {
 				rows.Close()
+				dbError(ctx)
 				return nil, fmt.Errorf("scan failed: %w", err)
 			}
 			metricResults = append(metricResults, &mr)
@@ -385,6 +409,7 @@ func (s *MetricsService) getMetricsBatch(ctx context.Context, deviceIDs []int64,
 		rows.Close()
 
 		if err := rows.Err(); err != nil {
+			dbError(ctx)
 			return nil, fmt.Errorf("rows iteration error: %w", err)
 		}
 
