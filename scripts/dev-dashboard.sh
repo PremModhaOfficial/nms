@@ -18,6 +18,7 @@
 # Optional:
 #   --smoke   - login (default admin/admin) then GET /api/v1/devices, PASS/FAIL
 #   --no-seed - skip the seed-if-empty step
+#   --open    - after startup, open the dashboard in the default browser
 #   --stop    - kill the instance recorded in the pidfile
 #
 # Idempotent: re-running stops any previous instance first, and every DB step
@@ -63,6 +64,8 @@ Options:
   --no-seed    Skip the seed-if-empty step.
   --smoke      After startup, smoke test: login (default admin/admin), then
                GET /api/v1/devices. Prints PASS/FAIL; exits non-zero on fail.
+  --open       After startup, open the dashboard URL in the default browser
+               (xdg-open on Linux, open on macOS).
   --stop       Kill the previously started instance (from the pidfile) and exit.
   --help, -h   Show this help and exit.
 
@@ -104,6 +107,7 @@ trap cleanup EXIT
 # ── Flags ─────────────────────────────────────────────────────────────────────
 NO_SEED=0
 SMOKE=0
+DO_OPEN=0
 DO_STOP=0
 DO_HELP=0
 
@@ -111,6 +115,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --no-seed) NO_SEED=1 ;;
         --smoke)   SMOKE=1 ;;
+        --open)    DO_OPEN=1 ;;
         --stop)    DO_STOP=1 ;;
         --help|-h) DO_HELP=1 ;;
         *) die "Unknown option: $1. Run '$0 --help' for usage." ;;
@@ -418,6 +423,17 @@ cmd_open() {
         "$BASE_URL" "$NMS_ADMIN_USER" "$pass"
     log_ok "Logs: $LOG_FILE   |   Stop with: $0 --stop"
     echo ""
+    if [ "$DO_OPEN" = "1" ]; then
+        if command -v xdg-open >/dev/null 2>&1; then
+            log_info "Opening dashboard in browser (xdg-open)..."
+            xdg-open "$BASE_URL/" >/dev/null 2>&1 || log_warn "Could not auto-open the browser."
+        elif command -v open >/dev/null 2>&1; then
+            log_info "Opening dashboard in browser (open)..."
+            open "$BASE_URL/" >/dev/null 2>&1 || log_warn "Could not auto-open the browser."
+        else
+            log_warn "No xdg-open/open found; open $BASE_URL/ manually."
+        fi
+    fi
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
