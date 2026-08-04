@@ -34,7 +34,7 @@ mkdir -p bin
 # Compile the app and plugins
 # ══════════════════════════════════════════════════════════════════════════════
 echo -e "${YELLOW}[1/3] Compiling server and plugins...${NC}"
-go build -o bin/nms-app cmd/app/main.go
+go build -o bin/nms-app ./cmd/app
 mkdir -p plugins
 (cd plugin-code/winrm && go build -o ../../plugins/winrm main.go)
 echo -e "${GREEN}[✓] Compiled successfully${NC}"

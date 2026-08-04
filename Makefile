@@ -13,7 +13,7 @@ all: help
 build:
 	@echo "Building NMS Server..."
 	@mkdir -p bin
-	go build -o bin/nms-server cmd/app/main.go
+	go build -o bin/nms-server ./cmd/app
 	@echo "Building winrm plugin..."
 	@mkdir -p plugins
 	cd plugin-code/winrm && go build -o ../../plugins/winrm main.go

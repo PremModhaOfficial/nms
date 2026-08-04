@@ -52,6 +52,9 @@ func (e *exporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpa
 	if e.closed {
 		return nil
 	}
+	// Late child spans destined for already-finalized traces. Converted after
+	// the pending bookkeeping so store locks are never held during store calls.
+	var spansToAppend []sdktrace.ReadOnlySpan
 	for _, sp := range spans {
 		if sp == nil {
 			continue
@@ -67,12 +70,25 @@ func (e *exporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpa
 			e.finalizeLocked(append(children, sp))
 			continue
 		}
+
+		// Late child span: the root already ended and the trace was finalized
+		// before this async continuation arrived. Append it to the stored trace
+		// when present (no-op otherwise, matching old behavior for evicted ids).
+		if e.finalizedTrace(traceID) {
+			spansToAppend = append(spansToAppend, sp)
+			continue
+		}
+
 		if _, ok := e.pending[traceID]; !ok {
 			e.order = append(e.order, traceID)
 		}
 		e.pending[traceID] = append(e.pending[traceID], sp)
 	}
 	e.evictLocked()
+	for _, sp := range spansToAppend {
+		traceID := sp.SpanContext().TraceID().String()
+		e.store.AppendSpan(traceID, convertSpan(sp, false))
+	}
 	return nil
 }
 
@@ -110,6 +126,14 @@ func isRoot(sp sdktrace.ReadOnlySpan) bool {
 		}
 	}
 	return false
+}
+
+// finalizedTrace reports whether a trace with traceID was already finalized
+// into the store (root ended before this span arrived). Callers append late
+// child spans rather than re-finalizing.
+func (e *exporter) finalizedTrace(traceID string) bool {
+	_, ok := e.store.Get(traceID)
+	return ok
 }
 
 // finalizeLocked converts a completed span set into a Trace and stores it.

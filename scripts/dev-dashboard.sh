@@ -235,7 +235,7 @@ cmd_db_up() {
 cmd_build() {
     log_info "Building server -> bin/nms-server ..."
     mkdir -p "$SCRIPT_DIR/bin"
-    (cd "$SCRIPT_DIR" && go build -o bin/nms-server cmd/app/main.go) \
+    (cd "$SCRIPT_DIR" && go build -o bin/nms-server ./cmd/app) \
         || die "Failed to build server (bin/nms-server)."
 
     log_info "Building winrm plugin -> plugins/winrm ..."

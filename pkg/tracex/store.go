@@ -86,6 +86,41 @@ func (s *Store) Get(id string) (*Trace, bool) {
 	return nil, false
 }
 
+// AppendSpan merges a late-arriving child span into an already-finalized
+// trace. Async channel continuations (event handlers, plugin pools) end after
+// the HTTP root span, so they reach the exporter after the trace was finalized.
+// Returns false when the trace is not retained, so callers can fall back to
+// pending/eviction handling. The span is deep-copied; the store never aliases.
+func (s *Store) AppendSpan(traceID string, sp Span) bool {
+	if traceID == "" {
+		return false
+	}
+	cp := cloneSpan(sp)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := 0; i < s.count; i++ {
+		idx := s.ringIdx(s.start + i)
+		t := s.buf[idx]
+		if t == nil || t.TraceID != traceID {
+			continue
+		}
+		// Skip duplicates (retried exports or double-finalized spans).
+		for _, existing := range t.Spans {
+			if existing.SpanID == cp.SpanID {
+				return true
+			}
+		}
+		t.Spans = append(t.Spans, cp)
+		t.SpanCount = len(t.Spans)
+		if t.EndedAt.Before(cp.EndedAt) {
+			t.EndedAt = cp.EndedAt
+		}
+		t.ComponentIDs = componentIDs(t.Spans)
+		return true
+	}
+	return false
+}
+
 // ringIdx normalizes an index into [0, TraceBufferSize) without panicking on
 // negative or overflow values (tiger: no unchecked arithmetic on exported paths).
 func (s *Store) ringIdx(i int) int {

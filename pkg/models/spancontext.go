@@ -64,3 +64,9 @@ func SpanContextIDs(ctx context.Context) (string, string) {
 func StampRequest(ctx context.Context, req *Request) {
 	req.TraceID, req.SpanID = SpanContextIDs(ctx)
 }
+
+// StampEvent carries the current span's context on an Event so the consuming
+// service can continue the trace across the event-channel boundary.
+func StampEvent(ctx context.Context, ev *Event) {
+	ev.TraceID, ev.SpanID = SpanContextIDs(ctx)
+}

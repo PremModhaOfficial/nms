@@ -47,13 +47,16 @@ func RunDiscoveryHandler(eventChan chan<- models.Event, crudReqCh chan<- models.
 			return
 		}
 
-		// Publish command event
-		if err := publishEvent(r, eventChan, models.Event{
+		// Publish command event, stamped with the HTTP span context so the
+		// consuming service continues this request's trace.
+		event := models.Event{
 			Type: models.EventTriggerDiscovery,
 			Payload: &models.DiscoveryTriggerEvent{
 				DiscoveryProfileID: id,
 			},
-		}); err != nil {
+		}
+		models.StampEvent(r.Context(), &event)
+		if err := publishEvent(r, eventChan, event); err != nil {
 			respondRPCError(w, err)
 			return
 		}
@@ -90,14 +93,17 @@ func ProvisionDeviceHandler(provisionCh chan<- models.Event) http.HandlerFunc {
 			return
 		}
 
-		// Publish command event
-		if err := publishEvent(r, provisionCh, models.Event{
+		// Publish command event, stamped with the HTTP span context so the
+		// consuming service continues this request's trace.
+		event := models.Event{
 			Type: models.EventProvisionDevice,
 			Payload: &models.DeviceProvisionEvent{
 				DeviceID:               id,
 				PollingIntervalSeconds: req.PollingIntervalSeconds,
 			},
-		}); err != nil {
+		}
+		models.StampEvent(r.Context(), &event)
+		if err := publishEvent(r, provisionCh, event); err != nil {
 			respondRPCError(w, err)
 			return
 		}

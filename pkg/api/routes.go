@@ -67,6 +67,10 @@ func jsonDecode(r *http.Request, v any) error {
 func doRequest(r *http.Request, reqCh chan<- models.Request, req models.Request) (models.Response, error) {
 	ctx := r.Context()
 
+	// Carry the HTTP span context on the request so the consuming service
+	// continues this request's trace across the reply-channel boundary.
+	models.StampRequest(ctx, &req)
+
 	select {
 	case reqCh <- req:
 	case <-ctx.Done():
