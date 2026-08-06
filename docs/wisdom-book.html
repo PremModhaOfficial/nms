@@ -1,0 +1,1047 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The NMS Wisdom Book</title>
+<style>
+  :root {
+    --paper: #f7f1e3;
+    --paper-deep: #efe6d2;
+    --plate-bg: #ede3cb;
+    --plate-border: #cdbfa1;
+    --ink: #2b251d;
+    --ink-soft: #5b5242;
+    --ink-faint: #8a7f6a;
+    --rule: #c9bda3;
+    --accent: #7d3b2e;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { -webkit-text-size-adjust: 100%; }
+
+  body {
+    margin: 0;
+    padding: 2.5rem 1rem 4rem;
+    background:
+      radial-gradient(ellipse at 20% 0%, rgba(125, 59, 46, 0.05), transparent 55%),
+      linear-gradient(180deg, #e9dfc9 0%, #efe7d4 12%, #f3ecdc 100%);
+    color: var(--ink);
+    font-family: Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", serif;
+    font-size: 1.02rem;
+    line-height: 1.75;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection { background: rgba(125, 59, 46, 0.18); }
+
+  .book {
+    position: relative;
+    max-width: 46em;
+    margin: 0 auto;
+    padding: 4rem 3.25rem 3.5rem;
+    background:
+      linear-gradient(90deg, rgba(0,0,0,0.028) 0%, transparent 3.5%),
+      linear-gradient(180deg, var(--paper) 0%, #f9f4e8 100%);
+    border: 1px solid var(--rule);
+    border-radius: 2px;
+    box-shadow:
+      0 1px 2px rgba(43, 37, 29, 0.10),
+      0 8px 24px rgba(43, 37, 29, 0.10),
+      0 32px 64px rgba(43, 37, 29, 0.10);
+  }
+
+  /* ---------- shared ornaments & rules ---------- */
+
+  .fleuron {
+    text-align: center;
+    color: var(--accent);
+    font-size: 1.35rem;
+    line-height: 1;
+    letter-spacing: 0.6em;
+    text-indent: 0.6em;
+    margin: 1.1em 0;
+    user-select: none;
+  }
+
+  .rule-ornament {
+    display: flex;
+    align-items: center;
+    gap: 0.9em;
+    margin: 1.4em auto 1.2em;
+    color: var(--accent);
+    max-width: 24em;
+  }
+  .rule-ornament::before,
+  .rule-ornament::after {
+    content: "";
+    flex: 1;
+    border-top: 1px solid var(--rule);
+  }
+
+  /* ---------- title page ---------- */
+
+  .title-page {
+    text-align: center;
+    padding: 3.2rem 0 2.6rem;
+    border-bottom: 1px solid var(--rule);
+    margin-bottom: 2.6rem;
+  }
+
+  .title-page .fleuron { margin: 0 0 1.6em; }
+
+  .book-title {
+    margin: 0;
+    font-size: clamp(2.5rem, 7vw, 3.4rem);
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    line-height: 1.12;
+    font-variant-numeric: oldstyle-nums;
+  }
+
+  .book-subtitle {
+    margin: 1em auto 0;
+    max-width: 26em;
+    font-style: italic;
+    font-size: 1.08rem;
+    color: var(--ink-soft);
+  }
+
+  .title-rule {
+    width: 6.5em;
+    border: none;
+    border-top: 1px solid var(--accent);
+    margin: 2em auto;
+  }
+
+  .epigraph {
+    margin: 0 auto;
+    max-width: 24em;
+    font-size: 0.95rem;
+    font-style: italic;
+    color: var(--ink-soft);
+  }
+  .epigraph .attrib {
+    display: block;
+    margin-top: 0.4em;
+    font-size: 0.8rem;
+    font-style: normal;
+    font-variant: small-caps;
+    letter-spacing: 0.14em;
+    color: var(--ink-faint);
+  }
+
+  .provenance {
+    margin-top: 2.6em;
+    font-size: 0.78rem;
+    font-variant: small-caps;
+    letter-spacing: 0.18em;
+    color: var(--ink-faint);
+    line-height: 2;
+  }
+  .provenance .sep { color: var(--accent); padding: 0 0.35em; }
+
+  /* ---------- table of contents ---------- */
+
+  .toc { margin-bottom: 3.2rem; }
+
+  .toc h2,
+  .prologue h2,
+  .epilogue h2 {
+    text-align: center;
+    font-size: 1.5rem;
+    font-weight: 500;
+    letter-spacing: 0.16em;
+    font-variant: small-caps;
+    margin: 0 0 0.2em;
+  }
+
+  .toc ol {
+    list-style: none;
+    margin: 2.2em 0 0;
+    padding: 0;
+  }
+
+  .toc li {
+    display: flex;
+    align-items: baseline;
+    padding: 0.58em 0;
+    border-bottom: 1px dotted var(--rule);
+  }
+
+  .toc-no {
+    font-variant-numeric: oldstyle-nums;
+    color: var(--accent);
+    min-width: 2.6em;
+  }
+
+  .toc-title { letter-spacing: 0.02em; }
+
+  .toc .dots {
+    flex: 1;
+    margin: 0 0.8em;
+    border-bottom: 1px dotted var(--ink-faint);
+  }
+
+  .toc-glyph { color: var(--accent); font-size: 0.95rem; }
+
+  /* ---------- chapters ---------- */
+
+  .chapter { margin: 0 0 3.4rem; }
+
+  .chapter-head {
+    text-align: center;
+    padding-bottom: 1.4rem;
+    margin-bottom: 2.2rem;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .chapter-numeral {
+    display: block;
+    font-size: 3.4rem;
+    line-height: 1;
+    font-weight: 400;
+    color: var(--accent);
+    font-variant-numeric: oldstyle-nums;
+    letter-spacing: 0.08em;
+    text-indent: 0.08em;
+    margin-bottom: 0.35em;
+  }
+
+  .chapter-title {
+    margin: 0;
+    font-size: 1.75rem;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    line-height: 1.25;
+  }
+
+  .chapter-head .rule-ornament { margin: 1.2em auto 0.9em; }
+
+  .chapter-motto {
+    margin: 0 auto;
+    max-width: 30em;
+    font-style: italic;
+    font-size: 0.98rem;
+    color: var(--ink-soft);
+  }
+
+  /* section headers inside chapters */
+
+  .section-head {
+    margin: 2.4em 0 0.7em;
+    font-size: 0.86rem;
+    font-weight: 400;
+    font-variant: small-caps;
+    letter-spacing: 0.22em;
+    color: var(--accent);
+    text-align: center;
+  }
+  .section-head::before,
+  .section-head::after {
+    content: " ❦ ";
+    font-variant: normal;
+    letter-spacing: 0;
+  }
+
+  p { margin: 0 0 1.1em; }
+  p:last-child { margin-bottom: 0; }
+
+  strong { font-weight: 600; }
+
+  code, .mono {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 0.84em;
+  }
+
+  p code {
+    background: rgba(0, 0, 0, 0.045);
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    border-radius: 3px;
+    padding: 0.05em 0.32em;
+    white-space: nowrap;
+  }
+
+  /* drop caps */
+
+  .dropcap::first-letter {
+    float: left;
+    font-size: 3.1em;
+    line-height: 0.82;
+    padding: 0.06em 0.12em 0 0;
+    color: var(--accent);
+    font-weight: 500;
+  }
+
+  /* ---------- engraved code plates ---------- */
+
+  .plate {
+    margin: 1.7em 0;
+    border: 1px solid var(--plate-border);
+    border-radius: 3px;
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.35), transparent 40%),
+      var(--plate-bg);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 1px 3px rgba(43, 37, 29, 0.12);
+    overflow: hidden;
+  }
+
+  .plate-head {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.4em 1em;
+    border-bottom: 1px solid var(--plate-border);
+    padding: 0.4em 1em;
+    background: rgba(43, 37, 29, 0.05);
+  }
+
+  .plate-tag {
+    font-size: 0.72rem;
+    font-weight: 600;
+    font-variant: small-caps;
+    letter-spacing: 0.22em;
+    padding: 0.1em 0.6em;
+    border-radius: 2px;
+    border: 1px solid;
+  }
+  .plate-tag.before {
+    color: #6b5d44;
+    border-color: #a8987a;
+    background: rgba(90, 78, 55, 0.08);
+  }
+  .plate-tag.after {
+    color: #6b3025;
+    border-color: var(--accent);
+    background: rgba(125, 59, 46, 0.09);
+  }
+  .plate-tag.note { color: var(--ink-faint); border-color: var(--rule); background: transparent; }
+
+  .plate-file {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    font-size: 0.76rem;
+    color: var(--ink-soft);
+    letter-spacing: 0.02em;
+  }
+
+  .plate pre {
+    margin: 0;
+    padding: 1.05em 1.2em;
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 0.8rem;
+    line-height: 1.6;
+    overflow-x: auto;
+    white-space: pre;
+    color: #32281c;
+  }
+
+  .plate-note {
+    margin: 0;
+    padding: 0.9em 1.2em;
+    font-size: 0.92rem;
+    font-style: italic;
+    color: var(--ink-soft);
+  }
+
+  /* ---------- lessons ---------- */
+
+  .lesson {
+    margin: 1.3em 0 0;
+    padding: 1em 1.4em;
+    border-left: 3px solid var(--accent);
+    background: rgba(125, 59, 46, 0.05);
+    font-size: 1.02rem;
+  }
+
+  /* ---------- epilogue ---------- */
+
+  .epilogue { margin: 0 0 2.6rem; }
+
+  .principles {
+    margin: 2.2em 0 0;
+    padding: 0;
+    list-style: none;
+    counter-reset: princ;
+  }
+
+  .principles li {
+    counter-increment: princ;
+    position: relative;
+    padding: 0.55em 0 0.55em 3.1em;
+    border-bottom: 1px dotted var(--rule);
+  }
+
+  .principles li::before {
+    content: counter(princ, decimal-leading-zero);
+    position: absolute;
+    left: 0;
+    top: 0.62em;
+    font-size: 0.82rem;
+    font-variant-numeric: tabular-nums oldstyle-nums;
+    color: var(--accent);
+    letter-spacing: 0.05em;
+  }
+
+  .principles li:last-child { border-bottom: none; }
+
+  /* ---------- colophon ---------- */
+
+  .colophon {
+    margin-top: 3.2rem;
+    padding-top: 1.8rem;
+    border-top: 1px solid var(--rule);
+    text-align: center;
+    font-size: 0.78rem;
+    font-variant: small-caps;
+    letter-spacing: 0.18em;
+    color: var(--ink-faint);
+    line-height: 2.1;
+  }
+  .colophon .fleuron { margin: 0 0 0.8em; font-size: 1rem; }
+
+  /* ---------- responsive ---------- */
+
+  @media (max-width: 560px) {
+    body { padding: 0.5rem 0.4rem 2rem; }
+    .book { padding: 2.4rem 1.4rem 2.2rem; }
+    .chapter-numeral { font-size: 2.6rem; }
+    .chapter-title { font-size: 1.4rem; }
+  }
+
+  @media print {
+    body { background: #fff; padding: 0; }
+    .book { box-shadow: none; border: none; max-width: none; }
+    .chapter { page-break-before: always; }
+  }
+</style>
+</head>
+<body>
+<main class="book">
+
+  <!-- ================= TITLE PAGE ================= -->
+  <section class="title-page" aria-label="Title page">
+    <div class="fleuron" aria-hidden="true">❦</div>
+    <h1 class="book-title">The NMS Wisdom Book</h1>
+    <p class="book-subtitle">Lessons from slimming, hardening, and observing a Go service</p>
+    <hr class="title-rule">
+    <p class="epigraph">
+      Fourteen commits taught a small service to fail honestly, observe itself, and introduce its own story.
+      <span class="attrib">compiled from the code, not from memory</span>
+    </p>
+    <p class="provenance">
+      the nms repository <span class="sep">·</span> commits 29a8a60..HEAD <span class="sep">·</span> 6 August 2026
+    </p>
+  </section>
+
+  <!-- ================= TABLE OF CONTENTS ================= -->
+  <nav class="toc" aria-label="Table of contents">
+    <h2>Table of Contents</h2>
+    <div class="fleuron" aria-hidden="true">❦</div>
+    <ol>
+      <li><span class="toc-no"></span><span class="toc-title">Prologue — Why This Book Exists</span><span class="dots"></span><span class="toc-glyph" aria-hidden="true">❧</span></li>
+      <li><span class="toc-no">I.</span><span class="toc-title">The Dependency Diet</span><span class="dots"></span><span class="toc-glyph" aria-hidden="true">❧</span></li>
+      <li><span class="toc-no">II.</span><span class="toc-title">Harden the Foundation</span><span class="dots"></span><span class="toc-glyph" aria-hidden="true">❧</span></li>
+      <li><span class="toc-no">III.</span><span class="toc-title">Making the Invisible Visible</span><span class="dots"></span><span class="toc-glyph" aria-hidden="true">❧</span></li>
+      <li><span class="toc-no">IV.</span><span class="toc-title">A Window into the Machine</span><span class="dots"></span><span class="toc-glyph" aria-hidden="true">❧</span></li>
+      <li><span class="toc-no">V.</span><span class="toc-title">A Repo That Tells Its Story</span><span class="dots"></span><span class="toc-glyph" aria-hidden="true">❧</span></li>
+      <li><span class="toc-no"></span><span class="toc-title">Epilogue — The Principles</span><span class="dots"></span><span class="toc-glyph" aria-hidden="true">❧</span></li>
+    </ol>
+  </nav>
+
+  <!-- ================= PROLOGUE ================= -->
+  <section class="prologue" aria-labelledby="prologue-title">
+    <div class="chapter-head">
+      <span class="chapter-numeral" aria-hidden="true">❦</span>
+      <h2 class="chapter-title" id="prologue-title">Prologue</h2>
+      <div class="rule-ornament" aria-hidden="true">✦</div>
+      <p class="chapter-motto">Why this book exists</p>
+    </div>
+
+    <p class="dropcap">A codebase is a record of decisions, but rarely a record of their reasons. Over the course of fourteen commits, a small Go service went through a quiet transformation: a network management system, lite by name and ambition, that discovers Windows machines, monitors them, and collects their metrics over WinRM. It shed dependencies it had never needed, learned to fail honestly instead of hanging or lying, learned to show its own workings, and finally learned to introduce itself to the people and agents who would work on it next. None of those commits was glamorous. Each was a small bet that the cost of carefulness is lower than the cost of confusion.</p>
+
+    <p>The arc has five movements, and this book has five chapters. First, a dependency diet: seven direct dependencies whose transitive tree carried a QUIC stack, a protobuf runtime, and a JSON fast-path, trimmed to four libraries that each earn their place. Second, hardening: timeouts where there were none, error codes that tell the truth, validation moved out of framework tags and into the service. Third, observability: traces that ride the channel messages themselves, so every hop across a goroutine boundary stays inside one story. Fourth, the window: a developer dashboard that turns the span stream into something you can click, with secrets redacted at the moment of capture. Fifth, the story: documentation so the repository can delegate work without re-explaining itself.</p>
+
+    <p>Each chapter keeps the same shape — the situation, the transformation, the lesson — because the shape is the point. Systems do not improve by accident; they improve when someone notices a tax being paid and removes it, when someone refuses to trust a partner that can fail, when someone makes the invisible visible, and when someone writes down what they learned. The book ends with the principles distilled, a short index of the wisdom, so that the next engineer — or the next agent — begins from the shared picture rather than a private scramble for context.</p>
+  </section>
+
+  <!-- ================= CHAPTER I ================= -->
+  <section class="chapter" id="ch1" aria-labelledby="ch1-title">
+    <header class="chapter-head">
+      <span class="chapter-numeral" aria-hidden="true">I</span>
+      <h2 class="chapter-title" id="ch1-title">The Dependency Diet</h2>
+      <div class="rule-ornament" aria-hidden="true">✦</div>
+      <p class="chapter-motto">Every dependency you import is a tax you pay forever, in builds, in scans, and in the shapes it forces on your code.</p>
+    </header>
+
+    <h3 class="section-head">The Situation</h3>
+    <p class="dropcap">The go.mod told a story nobody had written down. Seven direct dependencies sounded modest, but they dragged in a transitive tree with sonic, quic-go, protobuf, json-iterator, two YAML parsers, and a mock generator. A service whose job was polling Windows machines over WinRM was compiling a QUIC stack because the HTTP router had an HTTP/3 client somewhere in its graph. Each build paid for all of it, each vulnerability scan re-read all of it, and each upstream release could change behavior anywhere in it. The go.sum was over a hundred lines of hashes for libraries the product never asked for.</p>
+    <p>The cost was not only compile time. gocrypt forced its own API onto the encryption code: reflection magic that walked struct tags, plus a hand-rolled workaround because &ldquo;gocrypt v1.1.0 only supports string fields&rdquo; while the credential model carried a <code>json.RawMessage</code> payload. Viper existed to merge <code>app.yaml</code> with environment variables, yet the code comments insisted secrets should only ever come from the environment, which meant the yaml file held little that viper was actually needed for. The database pool configuration exposed seven tuning knobs across three separate pools that nobody had ever measured a reason to tune separately.</p>
+
+    <h3 class="section-head">The Transformation</h3>
+    <p>The first move was the module file itself. Gin, viper, and gocrypt left, and with them the tree they had been holding up.</p>
+
+    <figure class="plate">
+      <figcaption class="plate-head">
+        <span class="plate-tag before">Before</span>
+        <span class="plate-file">go.mod</span>
+      </figcaption>
+      <pre>require github.com/gin-gonic/gin v1.11.0
+require github.com/spf13/viper v1.21.0
+require github.com/firdasafridi/gocrypt v1.1.0
+
+// indirects: bytedance/sonic, quic-go/quic-go,
+//            google.golang.org/protobuf,
+//            json-iterator/go, goccy/go-yaml</pre>
+    </figure>
+
+    <figure class="plate">
+      <figcaption class="plate-head">
+        <span class="plate-tag after">After</span>
+        <span class="plate-file">go.mod</span>
+      </figcaption>
+      <pre>require github.com/golang-jwt/jwt/v4
+require github.com/jmoiron/sqlx
+require github.com/jackc/pgx/v5</pre>
+    </figure>
+
+    <p>Seven direct dependencies became four and the go.sum shrank by 108 lines. The before state shipped a JSON fast-path, a QUIC implementation, and a protobuf runtime to serve a handful of REST endpoints. The after state keeps only libraries that do something the standard library cannot, and each one is earned by a real call site.</p>
+
+    <p>The gocrypt replacement is the most instructive. The old code handed the whole struct to a black box and hoped.</p>
+
+    <figure class="plate">
+      <figcaption class="plate-head">
+        <span class="plate-tag before">Before</span>
+        <span class="plate-file">pkg/api/encryption.go</span>
+      </figcaption>
+      <pre>aesOpt, err := gocrypt.NewAESOpt(secretKey)
+...
+gc := gocrypt.New(opt)
+err = gc.Encrypt(&amp;entity)</pre>
+    </figure>
+
+    <p>That call was followed by a separate reflection pass called <code>handleRawMessageFields</code>, written purely because the library&rsquo;s tag scanner could not handle <code>json.RawMessage</code>. The new code names every step of the cipher.</p>
+
+    <figure class="plate">
+      <figcaption class="plate-head">
+        <span class="plate-tag after">After</span>
+        <span class="plate-file">pkg/api/encryption.go</span>
+      </figcaption>
+      <pre>func newAEAD(secretKey string) (cipher.AEAD, error) {
+    if len(secretKey) != 64 {
+        return nil, fmt.Errorf("encryption key must be 64 hex characters, got %d", len(secretKey))
+    }
+    key, err := hex.DecodeString(secretKey)
+    ...
+    return cipher.NewGCM(block)
+}</pre>
+      <pre>nonce := make([]byte, aead.NonceSize())
+if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+    return "", err
+}
+ciphertext := aead.Seal(nonce, nonce, []byte(plain), nil)
+return hex.EncodeToString(ciphertext), nil</pre>
+    </figure>
+
+    <p>The old code was bad not because it was insecure, but because you could not see whether it was. The new code is good because the format is explicit, the key length is enforced at the boundary, and the comment states the critical fact: gocrypt&rsquo;s wire format was nonce-prefixed, hex-encoded AES, exactly what this emits, so every stored row decrypts with zero migration.</p>
+
+    <p>Config went the same way. Viper&rsquo;s layered merge was replaced by two helpers and a struct literal.</p>
+
+    <figure class="plate">
+      <figcaption class="plate-head">
+        <span class="plate-tag before">Before</span>
+        <span class="plate-file">pkg/config/config.go</span>
+      </figcaption>
+      <pre>v := viper.New()
+v.SetDefault("DB_HOST", "localhost")
+...
+v.AutomaticEnv()
+v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+v.Unmarshal(&amp;config)</pre>
+    </figure>
+
+    <figure class="plate">
+      <figcaption class="plate-head">
+        <span class="plate-tag after">After</span>
+        <span class="plate-file">pkg/config/config.go</span>
+      </figcaption>
+      <pre>func env(key, def string) string {
+    if v := os.Getenv(key); v != "" {
+        return v
+    }
+    return def
+}</pre>
+    </figure>
+
+    <p><code>LoadConfig</code> now builds the Config struct with <code>env("DB_HOST", "localhost")</code> lines and three shared pool keys instead of seven. The before state ran a config library whose main job was merging layers the team already did not trust, and it carried a yaml file that was doomed to drift from the code. The after state keeps every default in one readable place, and the seven pool knobs collapse to three because three separately tuned pools had never been validated.</p>
+
+    <p>The diet was also a deletion. <code>flow.md</code> (186 lines), <code>mirror.md</code> (357 lines), <code>progress.md</code>, <code>added_endpoints.txt</code>, <code>seed.sh</code>, <code>app.yaml</code>, and a tracked <code>app.log</code> of 256 lines and a tracked <code>.env</code> all left the tree. A stale doc costs more than zero: it teaches the wrong model of the system, and a tracked log file teaches that logs belong in git.</p>
+
+    <h3 class="section-head">The Lesson</h3>
+    <p class="lesson"><strong>Before you import a library, ask whether the standard library already pays that bill, because a dependency is a promise to carry its API, its bugs, and its transitive tree forever.</strong> Go&rsquo;s stdlib has a router with method patterns, AES-256-GCM, and environment access, all maintained with the language and reviewed by everyone. The diet showed up in a smaller go.sum, but the real win was that the four remaining dependencies each do something the stdlib genuinely cannot, and every line of the other three systems is now code you can read.</p>
+  </section>
+
+  <!-- ================= CHAPTER II ================= -->
+  <section class="chapter" id="ch2" aria-labelledby="ch2-title">
+    <header class="chapter-head">
+      <span class="chapter-numeral" aria-hidden="true">II</span>
+      <h2 class="chapter-title" id="ch2-title">Harden the Foundation</h2>
+      <div class="rule-ornament" aria-hidden="true">✦</div>
+      <p class="chapter-motto">Correctness under failure is a feature you ship before the failure arrives.</p>
+    </header>
+
+    <h3 class="section-head">The Situation</h3>
+    <p class="dropcap">The API talked to the rest of the system over request-reply channels, and every handler trusted that conversation to end. A handler built a reply channel, pushed a <code>models.Request</code> into the service&rsquo;s inbox, then parked on <code>resp := &lt;-replyCh</code> with nothing else happening. If the entity service was down or wedged, the handler blocked forever: no timeout, no cancellation, no response, and a goroutine pinned for the life of the process. Errors were worse than absent, they were lying. Every failure funneled into <code>respondError(c, http.StatusInternalServerError, resp.Error.Error())</code>, so a missing record, a duplicate key, and a dead database all came back as 500 with the raw driver string pasted into the body. Validation lived in <code>binding:"required"</code> struct tags that only meant anything inside gin&rsquo;s <code>ShouldBindJSON</code>; the moment the transport changed, the guarantees evaporated. Startup was quietly permissive too: <code>ValidateSecrets</code> emitted a warning, and the server was glad to serve JWTs, encryption keys, and admin hashes over plain HTTP in production.</p>
+
+    <h3 class="section-head">The Transformation</h3>
+    <p>The first fix gave every channel crossing a deadline. The old handler was three trusting lines: push, wait, check. The new one routes the whole conversation through <code>doRequest</code>, which selects on the request context and a five-second <code>rpcTimeout</code> on each send and reply, returning <code>errServiceUnavailable</code> instead of hanging.</p>
+
+    <figure class="plate">
+      <figcaption class="plate-head">
+        <span class="plate-tag before">Before</span>
+        <span class="plate-file">pkg/api/routes.go (0e7d5ef^)</span>
+      </figcaption>
+      <pre>replyCh := make(chan models.Response, 1)
+reqCh &lt;- models.Request{
+    Operation:  models.OpList,
+    EntityType: entityType,
+    ReplyCh:    replyCh,
+}
+resp := &lt;-replyCh
+if resp.Error != nil {
+    respondError(c, http.StatusInternalServerError, resp.Error.Error())
+    return
+}</pre>
+    </figure>
+
+    <figure class="plate">
+      <figcaption class="plate-head">
+        <span class="plate-tag after">After</span>
+        <span class="plate-file">pkg/api/routes.go (0e7d5ef)</span>
+      </figcaption>
+      <pre>func doRequest(r *http.Request, reqCh chan&lt;- models.Request, req models.Request) (models.Response, error) {
+    ctx := r.Context()
+    select {
+    case reqCh &lt;- req:
+    case &lt;-ctx.Done():
+        return models.Response{}, ctx.Err()
+    case &lt;-time.After(rpcTimeout):
+        return models.Response{}, errServiceUnavailable
+    }
+    select {
+    case resp := &lt;-req.ReplyCh:
+        return resp, nil
+    case &lt;-ctx.Done():
+        return models.Response{}, ctx.Err()
+    case &lt;-time.After(rpcTimeout):
+        return models.Response{}, errServiceUnavailable
+    }
+}</pre>
+    </figure>
+
+    <p>The before version had an unbounded wait, so a dead service turned a health check into a goroutine leak. The after version bounds the wait at every hop, honors client disconnects via <code>ctx.Done()</code>, and keeps the reply channel buffered so the service side never blocks on a handler that already gave up. <code>respondRPCError</code> maps the sentinel to a real 503 instead of a lie.</p>
+
+    <p>The second fix made errors honest. <code>classifyError</code> replaced the one-size-fits-all 500 with a switch that reads the actual failure: <code>sql.ErrNoRows</code> and <code>record not found</code> become 404, duplicate keys and the Postgres <code>23503</code> foreign-key violation become 409, validation phrases become 400, and everything else becomes a bare <code>internal server error</code>.</p>
+
+    <figure class="plate">
+      <figcaption class="plate-head">
+        <span class="plate-tag before">Before</span>
+        <span class="plate-file">pkg/api/routes.go (0e7d5ef^, createHandler)</span>
+      </figcaption>
+      <pre>resp := &lt;-replyCh
+if resp.Error != nil {
+    respondError(c, http.StatusInternalServerError, resp.Error.Error())
+    return
+}</pre>
+    </figure>
+
+    <figure class="plate">
+      <figcaption class="plate-head">
+        <span class="plate-tag after">After</span>
+        <span class="plate-file">pkg/api/routes.go (0e7d5ef)</span>
+      </figcaption>
+      <pre>func respondServiceError(w http.ResponseWriter, operation, entityType string, err error) {
+    slog.Error("API request failed", "operation", operation, "entity_type", entityType, "error", err)
+    code, msg := classifyError(err)
+    respondError(w, code, msg)
+}</pre>
+    </figure>
+
+    <p>Sending <code>resp.Error.Error()</code> to the client handed strangers the inside of your database layer and made every failure indistinguishable. The after version logs the full error server-side and forwards only a classified, client-safe message, so a client can act on the response while DB internals stay in the logs.</p>
+
+    <p>The third fix moved validation out of the framework and into the service. The models carried <code>binding:"omitempty,min=1,max=65535"</code> tags that only gin honored; the same checks now live in <code>EntityService</code> as plain functions run on every create and update, transport be damned.</p>
+
+    <figure class="plate">
+      <figcaption class="plate-head">
+        <span class="plate-tag before">Before</span>
+        <span class="plate-file">pkg/models/models.go (0e7d5ef^)</span>
+      </figcaption>
+      <pre>Port                   int    `db:"port" json:"port" binding:"omitempty,min=1,max=65535" update:"omitempty"`
+Status                 string `db:"status" json:"status" binding:"omitempty,oneof=discovered active inactive error" update:"omitempty"`</pre>
+    </figure>
+
+    <figure class="plate">
+      <figcaption class="plate-head">
+        <span class="plate-tag after">After</span>
+        <span class="plate-file">pkg/Services/persistence/entityService.go (0e7d5ef)</span>
+      </figcaption>
+      <pre>func validateDeviceFields(device *models.Device) error {
+    if device.Port != 0 &amp;&amp; (device.Port &lt; 1 || device.Port &gt; 65535) {
+        return fmt.Errorf("port must be between 1 and 65535")
+    }
+    if device.PollingIntervalSeconds != 0 &amp;&amp; (device.PollingIntervalSeconds &lt; 60 || device.PollingIntervalSeconds &gt; 3600) {
+        return fmt.Errorf("polling_interval_seconds must be between 60 and 3600")
+    }
+    if device.IPAddress != "" &amp;&amp; net.ParseIP(device.IPAddress) == nil {
+        return fmt.Errorf("ip_address must be a valid IP address")
+    }
+    switch device.Status {
+    case "", "discovered", "active", "inactive", "error":
+    default:
+        return fmt.Errorf("invalid status %q", device.Status)
+    }
+    return nil
+}</pre>
+    </figure>
+
+    <p>Tags in the model only worked inside gin, so validation was a transport accident. As service functions, the same rules run no matter how a request arrives, and their error strings are exactly the phrases <code>classifyError</code> recognizes, so the two halves agree on what a 400 looks like.</p>
+
+    <p>The same spirit hit startup and the server. <code>ValidateSecrets</code> became fail-fast: in production, a default key or admin hash means <code>os.Exit(1)</code>, and <code>main</code> refuses to start at all without TLS configured, because this API carries JWTs, encryption keys, and admin hashes. The duplicated TLS and plain-HTTP branches collapsed into one <code>newHTTPServer</code> with explicit timeouts, <code>ReadHeaderTimeout</code> of five seconds and <code>WriteTimeout</code> of thirty, so slow clients cannot hold connections open. A new <code>MaxBodyBytes</code> middleware capped request bodies at 1 MiB. And for the first time the commit shipped a real test suite, 308 lines of <code>api_test.go</code> on <code>httptest</code> including <code>TestDoRequestTimesOutWhenServiceNeverReplies</code>, plus pool, service, and plugin tests, so the bounded waits and classified errors were proven instead of hoped for.</p>
+
+    <h3 class="section-head">The Lesson</h3>
+    <p class="lesson"><strong>Assume every partner in the system can fail, and make each failure bounded, honest, and local.</strong> A timeout beats a wedged goroutine, a 404 beats a raw driver string, validation at the service boundary outlives any framework, and a process that refuses to boot unsafe is safer than one that runs with a warning. Tests turn these intentions into guarantees.</p>
+  </section>
+
+  <!-- ================= CHAPTER III ================= -->
+  <section class="chapter" id="ch3" aria-labelledby="ch3-title">
+    <header class="chapter-head">
+      <span class="chapter-numeral" aria-hidden="true">III</span>
+      <h2 class="chapter-title" id="ch3-title">Making the Invisible Visible</h2>
+      <div class="rule-ornament" aria-hidden="true">✦</div>
+      <p class="chapter-motto">An event-driven service is a black box until every hop carries its trace; the edges are the diagram.</p>
+    </header>
+
+    <h3 class="section-head">The Situation</h3>
+    <p class="dropcap">NMS is a fan-out of goroutines joined by channels. A discovery request lands in the API layer, gets handed to EntityService, hops to the Scheduler, crosses into the Poller, drops into the plugin worker pool, and eventually writes through MetricsService into PostgreSQL. Every hop is a <code>select</code> on a channel, and every hop was a place where the story could die silently.</p>
+    <p>When a device went quiet or a discovery run produced nothing, you had logs per component but no single answer to &ldquo;where did this request go?&rdquo; The failure could hide anywhere along that chain, and finding it meant reading five services&rsquo; worth of <code>slog</code> output by hand, matching timestamps, and guessing. Worse, the payloads that would have told you what each hop carried included credentials, and nobody wanted those in a log file. The cost of observability was measured in hours per incident, and the alternative, logging everything, was unacceptable.</p>
+
+    <h3 class="section-head">The Transformation</h3>
+    <p>The fix was not a logging framework. It was four small decisions that compound: a real OpenTelemetry exporter writing into an in-process ring buffer, span context stamped onto every channel message, remote contexts rebuilt at each consumer, and a topology graph that is literally the architecture diagram.</p>
+
+    <p>The first decision was to make the channel messages themselves carry the trace. An <code>Event</code> used to be just a type and a payload. Nothing in it said where it came from.</p>
+
+    <figure class="plate">
+      <figcaption class="plate-head">
+        <span class="plate-tag before">Before</span>
+        <span class="plate-file">pkg/models/event.go (parent of f4a9efb)</span>
+      </figcaption>
+      <pre>type Event struct {
+    Type    EventType   `json:"type"`
+    Payload interface{} `json:"payload"`
+}</pre>
+    </figure>
+
+    <figure class="plate">
+      <figcaption class="plate-head">
+        <span class="plate-tag after">After</span>
+        <span class="plate-file">pkg/models/event.go (f4a9efb)</span>
+      </figcaption>
+      <pre>type Event struct {
+    Type    EventType   `json:"type"`
+    Payload interface{} `json:"payload"`
+
+    // Span context of the sender, so the receiving service can continue the
+    // distributed trace across the channel boundary.
+    TraceID string `json:"trace_id,omitempty"`
+    SpanID  string `json:"span_id,omitempty"`
+}</pre>
+    </figure>
+
+    <p>Before, the receiver started each handler with whatever context happened to be lying around, so every component began a brand new trace and the only shared identifier was a device ID you happened to notice in two log lines. After, the producer stamps the message with <code>StampEvent</code> and the consumer rebuilds a real parent at the point of consumption, for example <code>tracex.Start(models.RemoteContext(event.TraceID, event.SpanID), "entity", "entityService.handleEvent")</code>. W3C trace and span ids ride the message itself, so child spans get genuine parents across goroutine boundaries.</p>
+
+    <p>The second decision handled awkward timing. Async continuations like the scheduler, poller, and plugin pool end after the HTTP root span, which means the store had already finalized the trace by the time the children arrived. The old exporter path could not cope: every non-root span went into the pending map.</p>
+
+    <figure class="plate">
+      <figcaption class="plate-head">
+        <span class="plate-tag before">Before</span>
+        <span class="plate-file">pkg/tracex/exporter.go (parent of 7deb9c4)</span>
+      </figcaption>
+      <pre>if _, ok := e.pending[traceID]; !ok {
+    e.order = append(e.order, traceID)
+}
+e.pending[traceID] = append(e.pending[traceID], sp)</pre>
+    </figure>
+
+    <figure class="plate">
+      <figcaption class="plate-head">
+        <span class="plate-tag after">After</span>
+        <span class="plate-file">pkg/tracex/store.go (7deb9c4)</span>
+      </figcaption>
+      <pre>// Skip duplicates (retried exports or double-finalized spans).
+for _, existing := range t.Spans {
+    if existing.SpanID == cp.SpanID {
+        return true
+    }
+}
+t.Spans = append(t.Spans, cp)
+t.SpanCount = len(t.Spans)
+if t.EndedAt.Before(cp.EndedAt) {
+    t.EndedAt = cp.EndedAt
+}</pre>
+    </figure>
+
+    <p>Before, a late child span waited in <code>pending</code> for a root that would never come, and was evicted unseen, so a waterfall that ended at the API layer showed a request that supposedly did nothing. After, the exporter checks <code>finalizedTrace</code> and routes the late span into <code>AppendSpan</code>, which merges it into the stored trace with span-ID dedupe so a retried export never doubles a span, and recomputes end time and component list from the merged set.</p>
+
+    <p>The third decision made the picture itself checkable. The topology view was declared by hand, and the first version drifted from ARCHITECTURE.md: nine nodes, a discovery pool missing, and edge labels that no longer matched the channel wiring.</p>
+
+    <figure class="plate">
+      <figcaption class="plate-head">
+        <span class="plate-tag before">Before</span>
+        <span class="plate-file">pkg/tracex/topology.go (parent of fe97fb1)</span>
+      </figcaption>
+      <pre>{ID: "discovery", Label: "DiscoveryService", Type: "service"},
+{ID: "health", Label: "HealthMonitor", Type: "service"},
+...
+{From: "discovery", To: "pluginpool", Label: "jobs"},</pre>
+    </figure>
+
+    <figure class="plate">
+      <figcaption class="plate-head">
+        <span class="plate-tag after">After</span>
+        <span class="plate-file">pkg/tracex/topology.go (fe97fb1)</span>
+      </figcaption>
+      <pre>{ID: "discoverypool", Label: "DiscoveryWorkerPool", Type: "service"},
+...
+{From: "discovery", To: "discoverypool", Label: "Jobs"},
+{From: "discoverypool", To: "entity", Label: "Results"},</pre>
+    </figure>
+
+    <p>Before, the dashboard and the architecture document disagreed, and a viewer could not tell which one was stale. After, the graph is an exact ten-node, fourteen-edge replica of the ARCHITECTURE.md mermaid diagram, and <code>isNodeID</code> enforces that only those node ids may appear in a trace&rsquo;s <code>ComponentIDs</code>. The diagram and the telemetry share one contract, so a trace that visits a node not on the map is a bug you can see, not a mystery.</p>
+
+    <p>Underneath all of this sit the guards that keep a dev tool from becoming a production liability: a ring buffer capped at 1000 traces that deep-copies on the way in and out so it never aliases caller state, 500 spans per trace, a 64 KiB cap on body attributes, 2000 pending traces awaiting their root, and <code>MaskJSON</code> redacting <code>payload</code>, <code>password</code>, <code>secret</code>, <code>token</code>, and <code>authorization</code> before anything is stored. The exporter implements the standard OTel <code>SpanExporter</code> interface, so wiring in a real collector later is a configuration swap, not a rewrite. <code>store_test.go</code> locks down ring eviction, newest-first listing, deep-copy semantics, and root-arrival finalization.</p>
+
+    <h3 class="section-head">The Lesson</h3>
+    <p class="lesson"><strong>Instrument the hop, not just the node, because in an event-driven service the edges are where the work happens and where it disappears.</strong> The trace only becomes useful when the message itself is the carrier, the late children still get merged, and the graph you draw on the dashboard is the same contract the code enforces. That is the difference between an architecture diagram and a picture of how the system actually behaves.</p>
+  </section>
+
+  <!-- ================= CHAPTER IV ================= -->
+  <section class="chapter" id="ch4" aria-labelledby="ch4-title">
+    <header class="chapter-head">
+      <span class="chapter-numeral" aria-hidden="true">IV</span>
+      <h2 class="chapter-title" id="ch4-title">A Window into the Machine</h2>
+      <div class="rule-ornament" aria-hidden="true">✦</div>
+      <p class="chapter-motto">A developer who can see the system live works ten times faster; build the window, but never let it leak secrets.</p>
+    </header>
+
+    <h3 class="section-head">The Situation</h3>
+    <p class="dropcap">NMS was a system you could only reason about from logs. The HTTP API, entity service, scheduler, poller, plugin worker pool, and health monitor all talked over channels, and ARCHITECTURE.md described the graph, but nothing showed it moving. When a discovery run failed, you grepped stdout and guessed which hop dropped the ball. Every bug was a two-hour archaeology session, and the failures you most wanted to understand left the least evidence. Real OTel spans already crossed every service boundary, but with no collector or UI they were invisible. What was missing was the window itself: a dashboard that turns the span stream into something you can click, plus the discipline to keep that window from showing secrets.</p>
+
+    <h3 class="section-head">The Transformation</h3>
+    <p>Start with placement. The old router wrapped the mux in security middleware and stopped:</p>
+
+    <figure class="plate">
+      <figcaption class="plate-head">
+        <span class="plate-tag before">Before</span>
+        <span class="plate-file">cmd/app/main.go</span>
+      </figcaption>
+      <pre>var h http.Handler = mux
+h = api.SecurityHeaders()(h)
+h = api.MaxBodyBytes(1 &lt;&lt; 20)(h) // 1 MiB request body cap
+return h</pre>
+    </figure>
+
+    <figure class="plate">
+      <figcaption class="plate-head">
+        <span class="plate-tag after">After</span>
+        <span class="plate-file">cmd/app/main.go</span>
+      </figcaption>
+      <pre>root.Handle("/api/", apiHandler)
+root.Handle("/login", apiHandler)
+root.Handle("/", dashboardHandler())
+return api.TraceMiddleware()(root)</pre>
+    </figure>
+
+    <p>The after wraps the outermost handler on purpose. Auth middleware sits inside the mux, so in the before world a failed login, a 404, or a 500 never passed through anything that recorded it; the failures were exactly the traces you could not see. Wrapping the root gives every request, including ones that die at the door, a root span. One detail shows the care: <code>r.Pattern</code> is only populated after ServeMux dispatch, so the middleware falls back to <code>r.URL.Path</code>. That is the difference between a trace that reads <code>HTTP POST /login</code> and one that reads <code>HTTP POST /</code> and tells you nothing.</p>
+
+    <p>Capturing bodies is where a window becomes a microscope, and where it becomes a liability. The before pipeline capped bodies with <code>http.MaxBytesReader</code> and dropped them, so you could reject a 10 MiB blob but never see why. The after reads and restores:</p>
+
+    <figure class="plate">
+      <figcaption class="plate-head">
+        <span class="plate-tag after">After</span>
+        <span class="plate-file">pkg/api/middleware.go</span>
+      </figcaption>
+      <pre>if buf, err := io.ReadAll(io.LimitReader(r.Body, maxTraceRequestBody+1)); err == nil {
+    r.Body = io.NopCloser(bytes.NewReader(buf))
+    body := buf
+    if len(body) &gt; maxTraceRequestBody {
+        body = body[:maxTraceRequestBody]
+    }
+    span.AddEvent("request.body", tracex.BodyEvent("request.body", tracex.MaskJSON(body)))
+}</pre>
+    </figure>
+
+    <p>Read limit+1, not limit. Cap at exactly the limit and an oversized body comes back restored and truncated, sails past MaxBytesReader, and the API silently accepts bodies it used to reject. One extra byte preserves the rejection semantics. Then <code>MaskJSON</code> redacts recursively, keyed by <code>payload</code>, <code>password</code>, <code>secret</code>, <code>token</code>, <code>authorization</code>, matched case-insensitively with <code>strings.EqualFold</code>: both <code>Authorization</code> headers and <code>Password</code> fields become <code>[HIDDEN]</code>. The raw bytes never reach the span event, so the trace store and the dashboard only ever see the masked copy. Invalid JSON passes through unchanged; a panic in debug middleware is the worst trade. Response bodies get the same treatment through a <code>captureResponseWriter</code>: status recorded, copy capped at 64 KiB, binary content types skipped, <code>Unwrap()</code> exposed so <code>http.ResponseController</code> keeps working.</p>
+
+    <p>The dashboard is zero-build vanilla JS with three views, embedded via a module-root <code>//go:embed all:web</code> and served same-origin, no CORS, no second process. The API routes keep the strict <code>default-src 'none'</code> CSP; only the dashboard handler gets <code>script-src 'self'</code>. The topology SVG is a live replica of ARCHITECTURE.md, and clicking a trace pulses the components and edges that request crossed, with errors marked red. The traces list returns metadata only, spans dropped, limit clamped between 1 and 200, keeping polling cheap.</p>
+
+    <p>The two fixes that followed are the honest part. The waterfall view mutated the cached trace while building its tree, so a 5-span trace grew to 10, then 20, then 40 rows on every poll:</p>
+
+    <figure class="plate">
+      <figcaption class="plate-head">
+        <span class="plate-tag before">Before</span>
+        <span class="plate-file">web/traces.js</span>
+      </figcaption>
+      <pre>var order = flattenTree(spans);</pre>
+    </figure>
+
+    <figure class="plate">
+      <figcaption class="plate-head">
+        <span class="plate-tag after">After</span>
+        <span class="plate-file">web/traces.js</span>
+      </figcaption>
+      <pre>var copies = spans.map(function (s) {
+    return Object.assign({}, s, { events: s.events, attributes: s.attributes });
+});
+var order = flattenTree(copies);</pre>
+    </figure>
+
+    <p>The topology canvas drew nothing because the DOM builder used <code>document.createElement</code> for SVG tags, so the browser lowercased <code>viewBox</code> into <code>viewbox</code>; the fix routes SVG tags through <code>createElementNS</code>. Both are two-line bugs that cost hours of staring at a blank screen, and both prove the window works: it showed you its own bugs first. Finally, <code>scripts/dev-dashboard.sh</code> collapses the whole loop: check deps, ensure the DB, build, run from a pidfile, wait for the server, seed if empty, and with <code>--open</code> launch the browser. One command takes the stack from zero to visible.</p>
+
+    <h3 class="section-head">The Lesson</h3>
+    <p class="lesson"><strong>Instrumentation is worthless until someone can look at it, so build the window early, and treat secrets as the one thing the window must never show.</strong> The window pays for itself in the first debugging session, but only if it shows failures as well as successes, and only if redaction happens in the capture path rather than at display time; the capture layer is where bodies are read and the only place masking can be forgotten.</p>
+  </section>
+
+  <!-- ================= CHAPTER V ================= -->
+  <section class="chapter" id="ch5" aria-labelledby="ch5-title">
+    <header class="chapter-head">
+      <span class="chapter-numeral" aria-hidden="true">V</span>
+      <h2 class="chapter-title" id="ch5-title">A Repo That Tells Its Story</h2>
+      <div class="rule-ornament" aria-hidden="true">✦</div>
+      <p class="chapter-motto">Documentation is not a chore. It is the interface between humans, machines, and the agents you delegate to.</p>
+    </header>
+
+    <h3 class="section-head">The Situation</h3>
+    <p class="dropcap">The repo worked. The Go backend had a generic <code>PluginWorkerPool[T, R]</code> shelling out to plugin binaries over JSON, an EntityService keeping an in-memory source of truth, a Scheduler with a min-heap DeadlineQueue, a MetricsService batching writes with <code>pgx.CopyFrom</code>. But the system worked in private. Nothing told a newcomer where the story lived. Issues existed in <code>PremModhaOfficial/nms</code> only as a fact in the maintainer&rsquo;s head, the triage vocabulary was unwritten, and the component topology existed once in ARCHITECTURE.md, unlinked from the README that everyone actually opens.</p>
+    <p>The cost was re-explanation. Every fresh pair of eyes, human or agent, paid the same onboarding tax, and every delegated task had to be prefaced with context that already existed in the code but had never been written down. The repo was delegating work, but it was delegating blind.</p>
+
+    <h3 class="section-head">The Transformation</h3>
+    <p>Commit 20ce977 changed this with a 17-line AGENTS.md that is less a file than a keyring. It does not repeat the story, it points to where each part of the story lives.</p>
+
+    <figure class="plate">
+      <figcaption class="plate-head">
+        <span class="plate-tag before">Before</span>
+        <span class="plate-file">AGENTS.md</span>
+      </figcaption>
+      <p class="plate-note">No AGENTS.md existed; a joining agent guessed conventions from scratch.</p>
+    </figure>
+
+    <figure class="plate">
+      <figcaption class="plate-head">
+        <span class="plate-tag after">After</span>
+        <span class="plate-file">AGENTS.md (added in 20ce977)</span>
+      </figcaption>
+      <pre># NMS
+
+Network Management System (NMS) - Lite. Go backend for discovery, monitoring, and
+metric collection over WinRM. See `ARCHITECTURE.md` for the component topology.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and PRDs live as GitHub issues in `PremModhaOfficial/nms` via the `gh`
+CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default labels: `needs-triage`, `needs-info`, `ready-for-agent`,
+`ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context repo. `CONTEXT.md` + `docs/adr/` at the repo root.
+See `docs/agents/domain.md`.</pre>
+    </figure>
+
+    <p>Before, an agent had to guess where work was tracked, what the labels meant, and where decisions lived. After, the pointer chain is explicit. AGENTS.md routes to three companion files, each carrying the operative detail. issue-tracker.md spells out the exact <code>gh issue view &lt;number&gt; --comments</code> incantation and the <code>wayfinder:map</code> conventions, triage-labels.md maps the five canonical roles to the exact label strings, and domain.md codifies that <code>CONTEXT.md</code> plus <code>docs/adr/</code> at the root is the single source of truth, even telling the reader to proceed silently when the files do not exist yet. The whole contract fits on one screen, and everything deeper has a link.</p>
+
+    <p>Commit 9e90ccf did the same for the picture. The README opened with a single sentence and then dropped the reader straight into psql setup.</p>
+
+    <figure class="plate">
+      <figcaption class="plate-head">
+        <span class="plate-tag before">Before</span>
+        <span class="plate-file">README.md (prior to 9e90ccf)</span>
+      </figcaption>
+      <pre>A lightweight, extensible network management system for discovery, monitoring,
+and metric collection.</pre>
+    </figure>
+
+    <figure class="plate">
+      <figcaption class="plate-head">
+        <span class="plate-tag after">After</span>
+        <span class="plate-file">README.md (added in 9e90ccf)</span>
+      </figcaption>
+      <pre>graph TD
+    API[API Layer] -->|Request/Reply| ES[EntityService]
+    API -->|Request/Reply| MS[MetricsService]
+
+    ES -->|sqlx| DB[(PostgreSQL)]
+    ES -->|Events| S[Scheduler]
+    ES -->|Events| DS[DiscoveryService]
+
+    S -->|Devices| P[Poller]
+    S -->|Failures| HM[HealthMonitor]
+    P -->|Jobs| PW[PluginWorkerPool]
+    PW -->|Results| MS
+    PW -->|Results| HM
+
+    MS -->|pgx.CopyFrom| DB
+    HM -->|OpDeactivateDevice| ES
+
+    DS -->|Jobs| DW[DiscoveryWorkerPool]
+    DW -->|Results| ES</pre>
+    </figure>
+
+    <p>The before was one sentence and a shrug. The after is the topology rendered in the file everyone reads. Crucially, it is not a second diagram drifting out of sync. The same graph sits in ARCHITECTURE.md, and docs/dev-dashboard.md turns it into instrumentation, with an edge table whose span names match the arrows, names like <code>poller.processBatch</code>, <code>metrics.write</code>, and <code>health.recordFailure</code>. One picture, three representations, all agreeing. A reader can go from README to architecture to live traces without ever reconciling contradictions.</p>
+
+    <h3 class="section-head">The Lesson</h3>
+    <p class="lesson"><strong>A repo whose story is written down can delegate work without re-explaining itself.</strong> Documentation pays compound interest, because every issue filed, every agent run, and every future session now starts from the same shared picture instead of a private scramble for context. Write for your future self and your future agents, and the repo starts doing your onboarding for you.</p>
+  </section>
+
+  <!-- ================= EPILOGUE ================= -->
+  <section class="epilogue" aria-labelledby="epilogue-title">
+    <div class="chapter-head">
+      <span class="chapter-numeral" aria-hidden="true">❦</span>
+      <h2 class="chapter-title" id="epilogue-title">Epilogue</h2>
+      <div class="rule-ornament" aria-hidden="true">✦</div>
+      <p class="chapter-motto">The Principles</p>
+    </div>
+
+    <p>Five chapters, fourteen commits, one habit of mind: question the tax you pay in silence, and remove it with evidence. Distilled from everything above, here is the index of wisdom this book was written to preserve.</p>
+
+    <ol class="principles">
+      <li>Every dependency is a tax paid forever; import only what the standard library cannot provide, and let each library earn its place by a real call site.</li>
+      <li>Assume every partner in the system can fail, and make each failure bounded, honest, and local — a timeout beats a wedged goroutine.</li>
+      <li>Validation belongs at the service boundary, where it survives any transport and agrees with the error classifier.</li>
+      <li>A process that refuses to boot unsafe is safer than one that runs with a warning.</li>
+      <li>Instrument the hop, not just the node; in event-driven systems the edges are where the work happens and where it disappears.</li>
+      <li>Trace context must ride the message itself, and late children must still be merged, or the waterfall lies at both ends.</li>
+      <li>The diagram you draw and the contract the code enforces must be the same graph, or nobody can tell which one is stale.</li>
+      <li>Instrumentation is worthless until someone can look at it; build the window early, and let it show failures as well as successes.</li>
+      <li>Redact secrets at capture time, never at display time; the capture layer is the only place masking cannot be forgotten.</li>
+      <li>A repo whose story is written down delegates work without re-explaining itself — documentation pays compound interest.</li>
+    </ol>
+  </section>
+
+  <!-- ================= COLOPHON ================= -->
+  <footer class="colophon">
+    <div class="fleuron" aria-hidden="true">❦</div>
+    The NMS Wisdom Book <span class="sep" aria-hidden="true">·</span> 6 August 2026
+    <br>
+    compiled from the NMS repository
+  </footer>
+
+</main>
+</body>
+</html>
