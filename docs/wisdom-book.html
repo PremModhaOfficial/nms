@@ -600,14 +600,70 @@ Single-context repo. `CONTEXT.md` + `docs/adr/` at the repo root.</pre>
 and metric collection.</pre>
       </div>
       <div class="plate-ba ba-after"><span class="ba-label">After</span>
-<pre>graph TD
-    API[API Layer] --&gt;|Request/Reply| ES[EntityService]
-    ES --&gt;|sqlx| DB[(PostgreSQL)]
-    ES --&gt;|Events| S[Scheduler]
-    P --&gt;|Jobs| PW[PluginWorkerPool]
-    PW --&gt;|Results| MS[MetricsService]
-    MS --&gt;|pgx.CopyFrom| DB
-    DS --&gt;|Jobs| DW[DiscoveryWorkerPool]</pre>
+<svg viewBox="0 0 860 440" width="100%" style="max-width:780px;margin:0.5rem auto;display:block;height:auto" role="img" aria-label="NMS component topology: API, EntityService, Scheduler, Poller, PluginWorkerPool, MetricsService, PostgreSQL, DiscoveryService, DiscoveryWorkerPool, HealthMonitor, with 14 directed edges.">
+<defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M0,0 L10,5 L0,10 z" fill="#8a7f6a"/>
+  </marker>
+</defs>
+<g font-family="Georgia,'Palatino Linotype',serif">
+  <g fill="none" stroke="#a89b82" stroke-width="1.3">
+    <path d="M165,160 L145,80" marker-end="url(#arrow)"/>
+    <path d="M165,160 L145,280" marker-end="url(#arrow)"/>
+    <path d="M295,80 L305,80" marker-end="url(#arrow)"/>
+    <path d="M295,110 L305,360" marker-end="url(#arrow)"/>
+    <path d="M295,110 L305,220" marker-end="url(#arrow)"/>
+    <path d="M455,80 L465,80" marker-end="url(#arrow)"/>
+    <path d="M455,110 L465,220" marker-end="url(#arrow)"/>
+    <path d="M615,80 L625,80" marker-end="url(#arrow)"/>
+    <path d="M700,110 V430 H250 V310" marker-end="url(#arrow)"/>
+    <path d="M625,80 L615,220" marker-end="url(#arrow)"/>
+    <path d="M295,280 L455,330" marker-end="url(#arrow)"/>
+    <path d="M540,190 L220,110" marker-end="url(#arrow)"/>
+    <path d="M380,250 L540,330" marker-end="url(#arrow)"/>
+    <path d="M465,390 V440 H135 V110 H145" marker-end="url(#arrow)"/>
+  </g>
+  <g fill="#5b5242" font-size="11" font-style="italic">
+    <text x="168" y="154">Request/Reply</text>
+    <text x="152" y="274">Request/Reply</text>
+    <text x="308" y="304">sqlx</text>
+    <text x="308" y="204">Events</text>
+    <text x="468" y="204">Failures</text>
+    <text x="300" y="424">Results</text>
+    <text x="612" y="204" text-anchor="end">Results</text>
+    <text x="386" y="306">pgx.CopyFrom</text>
+    <text x="360" y="156">OpDeactivateDevice</text>
+    <text x="500" y="306" text-anchor="end">Jobs</text>
+    <text x="200" y="434">Results</text>
+  </g>
+  <g fill="#fbf6ea" stroke="#8a7f6a" stroke-width="1.2">
+    <rect x="15" y="130" width="150" height="60" rx="8"/>
+    <rect x="145" y="50" width="150" height="60" rx="8"/>
+    <rect x="145" y="250" width="150" height="60" rx="8"/>
+    <rect x="305" y="50" width="150" height="60" rx="8"/>
+    <rect x="305" y="190" width="150" height="60" rx="8"/>
+    <rect x="465" y="50" width="150" height="60" rx="8"/>
+    <rect x="465" y="190" width="150" height="60" rx="8"/>
+    <rect x="465" y="330" width="150" height="60" rx="8"/>
+    <rect x="625" y="50" width="150" height="60" rx="8"/>
+  </g>
+  <g fill="#2b251d" font-size="12.5" font-weight="bold" text-anchor="middle" dominant-baseline="central">
+    <text x="90" y="160">API</text>
+    <text x="220" y="80">EntityService</text>
+    <text x="220" y="280">MetricsService</text>
+    <text x="380" y="80">Scheduler</text>
+    <text x="380" y="220">DiscoveryService</text>
+    <text x="540" y="80">Poller</text>
+    <text x="540" y="220">HealthMonitor</text>
+    <text x="540" y="360">DiscoveryWorkerPool</text>
+    <text x="700" y="80">PluginWorkerPool</text>
+  </g>
+  <g fill="#e9dcc8" stroke="#7d3b2e" stroke-width="1.2">
+    <rect x="305" y="330" width="150" height="60" rx="8"/>
+    <text x="380" y="360" fill="#2b251d" font-size="12.5" font-weight="bold" text-anchor="middle" dominant-baseline="central">PostgreSQL</text>
+  </g>
+</g>
+</svg>
       </div>
       <p class="why">The same graph sits in ARCHITECTURE.md, and docs/dev-dashboard.md turns it into instrumentation with span names that match the arrows. One picture, three representations, all agreeing; a reader never reconciles contradictions.</p>
     </div>
