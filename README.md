@@ -1,7 +1,7 @@
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/PremModhaOfficial/nms)
-# Network Management System (NMS) - Lite
+# Network Monitoring System (NMS) - Lite
 
-A lightweight, extensible network management system for discovery, monitoring, and metric collection.
+A lightweight, extensible network monitoring system for discovery, monitoring, and metric collection.
 
 ## Component Diagram
 

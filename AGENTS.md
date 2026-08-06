@@ -1,6 +1,6 @@
 # NMS
 
-Network Management System (NMS) - Lite. Go backend for discovery, monitoring, and metric collection over WinRM. See `ARCHITECTURE.md` for the component topology.
+Network Monitoring System (NMS) - Lite. Go backend for discovery, monitoring, and metric collection over WinRM. See `ARCHITECTURE.md` for the component topology.
 
 ## Agent skills
 

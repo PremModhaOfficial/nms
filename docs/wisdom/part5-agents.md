@@ -19,7 +19,7 @@ Commit 20ce977 changed this with a 17-line AGENTS.md that is less a file than a 
 ```markdown
 # NMS
 
-Network Management System (NMS) - Lite. Go backend for discovery, monitoring, and metric collection over WinRM. See `ARCHITECTURE.md` for the component topology.
+Network Monitoring System (NMS) - Lite. Go backend for discovery, monitoring, and metric collection over WinRM. See `ARCHITECTURE.md` for the component topology.
 
 ## Agent skills
 
@@ -43,7 +43,7 @@ Commit 9e90ccf did the same for the picture. The README opened with a single sen
 **BEFORE**: `README.md`, prior to 9e90ccf:
 
 ```markdown
-A lightweight, extensible network management system for discovery, monitoring, and metric collection.
+A lightweight, extensible network monitoring system for discovery, monitoring, and metric collection.
 ```
 
 **AFTER**: `README.md`, added in 9e90ccf:

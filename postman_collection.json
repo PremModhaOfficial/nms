@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Lite NMS API",
-    "description": "API collection for the Lite NMS (Network Management System)",
+    "description": "API collection for the Lite NMS (Network Monitoring System)",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {

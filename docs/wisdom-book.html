@@ -459,7 +459,7 @@
       <p class="chapter-motto">Why this book exists</p>
     </div>
 
-    <p class="dropcap">A codebase is a record of decisions, but rarely a record of their reasons. Over the course of fourteen commits, a small Go service went through a quiet transformation: a network management system, lite by name and ambition, that discovers Windows machines, monitors them, and collects their metrics over WinRM. It shed dependencies it had never needed, learned to fail honestly instead of hanging or lying, learned to show its own workings, and finally learned to introduce itself to the people and agents who would work on it next. None of those commits was glamorous. Each was a small bet that the cost of carefulness is lower than the cost of confusion.</p>
+    <p class="dropcap">A codebase is a record of decisions, but rarely a record of their reasons. Over the course of fourteen commits, a small Go service went through a quiet transformation: a network monitoring system, lite by name and ambition, that discovers Windows machines, monitors them, and collects their metrics over WinRM. It shed dependencies it had never needed, learned to fail honestly instead of hanging or lying, learned to show its own workings, and finally learned to introduce itself to the people and agents who would work on it next. None of those commits was glamorous. Each was a small bet that the cost of carefulness is lower than the cost of confusion.</p>
 
     <p>The arc has five movements, and this book has five chapters. First, a dependency diet: seven direct dependencies whose transitive tree carried a QUIC stack, a protobuf runtime, and a JSON fast-path, trimmed to four libraries that each earn their place. Second, hardening: timeouts where there were none, error codes that tell the truth, validation moved out of framework tags and into the service. Third, observability: traces that ride the channel messages themselves, so every hop across a goroutine boundary stays inside one story. Fourth, the window: a developer dashboard that turns the span stream into something you can click, with secrets redacted at the moment of capture. Fifth, the story: documentation so the repository can delegate work without re-explaining itself.</p>
 
@@ -943,7 +943,7 @@ var order = flattenTree(copies);</pre>
       </figcaption>
       <pre># NMS
 
-Network Management System (NMS) - Lite. Go backend for discovery, monitoring, and
+Network Monitoring System (NMS) - Lite. Go backend for discovery, monitoring, and
 metric collection over WinRM. See `ARCHITECTURE.md` for the component topology.
 
 ## Agent skills
@@ -973,7 +973,7 @@ See `docs/agents/domain.md`.</pre>
         <span class="plate-tag before">Before</span>
         <span class="plate-file">README.md (prior to 9e90ccf)</span>
       </figcaption>
-      <pre>A lightweight, extensible network management system for discovery, monitoring,
+      <pre>A lightweight, extensible network monitoring system for discovery, monitoring,
 and metric collection.</pre>
     </figure>
 

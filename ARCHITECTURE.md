@@ -2,7 +2,7 @@
 
 ## Overview
 
-NMS is a modular network management system built in Go. Services run as goroutines and communicate via typed channels and events.
+NMS is a modular network monitoring system built in Go. Services run as goroutines and communicate via typed channels and events.
 
 ## Component Diagram
 
