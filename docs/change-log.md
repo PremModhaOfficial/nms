@@ -46,7 +46,18 @@ The foundation. One large refactor commit, 42 files, +2585 / −1769.
 ## Verified state (2026-08-06)
 
 - `go build ./...` passes.
-- `go test ./pkg/tracex/... ./pkg/api/... ./pkg/pluginWorker/...` passes.
+- `go test ./...` passes for every package, including all 9 new test files:
+  `api_test.go` (308), `store_test.go` (214), `pool_test.go` (203),
+  `discoveryService_test.go` (112), `healthMonitor_test.go` (106),
+  `winrm/main_test.go` (57), `repository_test.go` (56),
+  `entityService_test.go` (48), `encryption_test.go` (47).
+- Topology graph: 10 nodes / 14 edges, verified against `topology.go` and
+  matching ARCHITECTURE.md.
+- Dashboard routes verified registered behind `protect()` (JWT) in
+  `cmd/app/main.go`: `GET /api/v1/topology`, `GET /api/v1/traces`,
+  `GET /api/v1/traces/{id}`. API surface keeps strict CSP `default-src 'none'`
+  plus 1 MiB `MaxBodyBytes`; static dashboard gets its own looser CSP.
+- Makefile targets `dashboard` and `dashboard-smoke` exist.
 
 ## Loose ends
 
