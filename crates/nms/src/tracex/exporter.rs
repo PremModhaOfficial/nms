@@ -2,6 +2,9 @@
 //! (Go tracex/exporter.go). Children always end before the parent, so root
 //! arrival means the trace is complete. Late child spans (async channel
 //! continuations) are appended to already-finalized traces.
+//!
+//! tiger: the exporter lock is never held while the store lock is taken —
+//! finalize returns the Trace and add_span stores it after unlocking.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -43,13 +46,15 @@ impl Exporter {
             let mut spans = inner.pending.remove(&trace_id).unwrap_or_default();
             inner.order.retain(|id| id != &trace_id);
             spans.push(span);
-            self.finalize_locked(&mut inner, trace_id, spans);
+            let trace = finalize_locked(&mut inner, trace_id, spans);
+            drop(inner); // release before store call (no nested locks)
+            self.store.add(trace);
             return;
         }
 
         // Late child span: root already ended and the trace was finalized.
         if self.store.get(&trace_id).is_some() {
-            drop(inner); // never hold the exporter lock while calling the store
+            drop(inner); // release before store call (no nested locks)
             self.store.append_span(&trace_id, span);
             return;
         }
@@ -58,49 +63,49 @@ impl Exporter {
             inner.order.push(trace_id.clone());
         }
         inner.pending.entry(trace_id).or_default().push(span);
-        self.evict_locked(&mut inner);
+        evict_locked(&mut inner);
     }
+}
 
-    /// Convert a completed span set into a Trace and store it. The earliest-
-    /// starting span is the root (roots begin before any child).
-    fn finalize_locked(&self, inner: &mut ExporterInner, trace_id: String, mut spans: Vec<Span>) {
-        assert!(!spans.is_empty(), "finalize called with no spans");
-        spans.sort_by(|a, b| {
-            a.started_at
-                .cmp(&b.started_at)
-                .then_with(|| a.span_id.cmp(&b.span_id))
-        });
-        // tiger: bound kept — extras dropped, earliest kept.
-        if spans.len() > MAX_SPANS_PER_TRACE {
-            spans.truncate(MAX_SPANS_PER_TRACE);
-        }
-        let root = spans[0].clone();
-        let mut t = Trace {
-            trace_id,
-            root_span_id: root.span_id.clone(),
-            started_at: root.started_at,
-            ended_at: root.ended_at,
-            duration_ms: root.duration_ms,
-            method: None,
-            path: None,
-            status_code: None,
-            component_ids: Vec::new(),
-            span_count: spans.len() as i32,
-            error: false,
-            spans,
-        };
-        extract_root_fields(&root, &mut t);
-        t.component_ids = super::store::component_ids(&t.spans);
-        drop(inner); // never hold the exporter lock while calling the store
-        self.store.add(t);
+/// Convert a completed span set into a Trace. The earliest-starting span is
+/// the root (roots begin before any child). Never touches the store.
+fn finalize_locked(inner: &mut ExporterInner, trace_id: String, mut spans: Vec<Span>) -> Trace {
+    assert!(!spans.is_empty(), "finalize called with no spans");
+    spans.sort_by(|a, b| {
+        a.started_at
+            .cmp(&b.started_at)
+            .then_with(|| a.span_id.cmp(&b.span_id))
+    });
+    // tiger: bound kept — extras dropped, earliest kept.
+    if spans.len() > MAX_SPANS_PER_TRACE {
+        spans.truncate(MAX_SPANS_PER_TRACE);
     }
+    let root = spans[0].clone();
+    let mut t = Trace {
+        trace_id,
+        root_span_id: root.span_id.clone(),
+        started_at: root.started_at,
+        ended_at: root.ended_at,
+        duration_ms: root.duration_ms,
+        method: None,
+        path: None,
+        status_code: None,
+        component_ids: Vec::new(),
+        span_count: spans.len() as i32,
+        error: false,
+        spans,
+    };
+    extract_root_fields(&root, &mut t);
+    t.component_ids = super::store::component_ids(&t.spans);
+    let _ = inner; // pending bookkeeping already done by caller
+    t
+}
 
-    /// Drop the oldest pending traces until within MAX_PENDING_TRACES.
-    fn evict_locked(&self, inner: &mut ExporterInner) {
-        while inner.pending.len() > MAX_PENDING_TRACES && !inner.order.is_empty() {
-            let id = inner.order.remove(0);
-            inner.pending.remove(&id);
-        }
+/// Drop the oldest pending traces until within MAX_PENDING_TRACES.
+fn evict_locked(inner: &mut ExporterInner) {
+    while inner.pending.len() > MAX_PENDING_TRACES && !inner.order.is_empty() {
+        let id = inner.order.remove(0);
+        inner.pending.remove(&id);
     }
 }
 

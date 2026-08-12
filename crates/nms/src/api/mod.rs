@@ -33,14 +33,14 @@ impl ApiError {
     }
 }
 
-impl From<database::DbError> for ApiError {
-    fn from(e: database::DbError) -> Self {
+impl From<crate::database::DbError> for ApiError {
+    fn from(e: crate::database::DbError) -> Self {
         match e {
-            database::DbError::NotFound => ApiError::NotFound("record not found".into()),
-            database::DbError::UniqueViolation => ApiError::Conflict("record already exists".into()),
-            database::DbError::ForeignKeyViolation => ApiError::Conflict("record is in use by another resource".into()),
-            database::DbError::InvalidFilterColumn(msg) => ApiError::BadRequest(msg),
-            database::DbError::Other(_) => ApiError::Internal,
+            crate::database::DbError::NotFound => ApiError::NotFound("record not found".into()),
+            crate::database::DbError::UniqueViolation => ApiError::Conflict("record already exists".into()),
+            crate::database::DbError::ForeignKeyViolation => ApiError::Conflict("record is in use by another resource".into()),
+            crate::database::DbError::InvalidFilterColumn(msg) => ApiError::BadRequest(msg),
+            crate::database::DbError::Other(_) => ApiError::Internal,
         }
     }
 }

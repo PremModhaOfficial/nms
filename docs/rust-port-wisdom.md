@@ -453,3 +453,103 @@ real time/process calls so this works.
 | E: services-discovery-health | `services/discovery.rs`, `services/monitor_failure.rs` | discoveryService.go, healthMonitor.go + tests |
 | F: api | `api/{mod,routes,jwt,middleware,response,provisioning,traces}.rs` | pkg/api/* + api_test.go, encryption_test.go (crypto already ported) |
 | G: winrm-plugin | `crates/winrm-plugin/src/main.rs` | plugin-code/winrm/main.go + main_test.go |
+
+
+---
+
+## 8. Flow tests (NEW requirement — every agent delivers one)
+
+Each agent writes ONE integration test file that walks its module's complete
+lifecycle as a **flow** (Postman-collection style: step → state change →
+assertion → next step). Model the shape on the example flow doc
+`de-postman/discovery-engine-import-single-replica-options.html`: a numbered
+sequence where each step performs one real operation through the module's
+public interface, asserts the expected outcome AND the resulting state, then
+moves to the next step. The flow must cover the module's end-to-end journey,
+not isolated unit cases.
+
+- **api agent** → `crates/nms/tests/api_flow.rs`: HTTP flow through the real
+  axum router with MemRepository + scripted services: login (bad → throttle →
+  good) → create credential → create discovery profile → run discovery trigger
+  → list devices → update device → metrics query (with path validation) →
+  delete. Assert status codes + JSON bodies + channel traffic at each step.
+- **database agent** → `crates/nms/tests/db_flow.rs`: repository lifecycle for
+  one entity against MemRepository AND (when a DATABASE_URL is present) the
+  sqlx repo: create (id assigned) → get → get_by_fields → update (omitempty
+  semantics) → list → delete → not-found. Run against sqlx only if
+  `NMS_TEST_DATABASE_URL` is set; MemRepository flow always runs.
+- **plugin_worker agent** → `crates/nms/tests/pool_flow.rs`: pool lifecycle:
+  start → submit batch → results round-trip → submit while shutting down
+  (rejected) → cancel → results channel closes. Use shell-script fake plugins
+  (as Go pool_test does) plus a scripted PluginRunner for the DST variant.
+- **services-core agent** → `crates/nms/tests/scheduler_flow.rs`: full tick
+  flow with scripted Pinger: init queue → device event (create) → advance time
+  → tick → get_batch (dedup) → fping split (reachable/not) → failure event for
+  unreachable → qualified dispatch → requeue with new deadline → next tick.
+- **services-persistence agent** → `crates/nms/tests/persistence_flow.rs`:
+  EntityService CRUD + cache flow with MemRepository (create → cache → event;
+  deactivate → status inactive → event) AND MetricsService flow (poll results
+  → write store rows → query path validation → failure event on poll error).
+- **services-discovery-health agent** → `crates/nms/tests/discovery_health_flow.rs`:
+  discovery flow (create profile event → expand target → submit tasks →
+  scripted result → provision device via EntityService-like path) and health
+  flow (failures within window → threshold → deactivate request sent).
+- **winrm-plugin agent** → `crates/winrm-plugin/tests/plugin_flow.rs`: stdin
+  JSON batch → stdout JSON results (empty target error, missing credentials
+  error, invalid port error, default TLS port) — drive `main`-level logic
+  through the process function directly (no real WinRM network in CI).
+
+Flow tests run under the DST harness where services are involved:
+`#[tokio::test(start_paused = true)]`, ManualClock, scripted effects. Each
+flow test asserts EXACT state after each step (no sleeps, no flaky waits).
+
+
+---
+
+## 9. Flow design documents (HTML, same depth as the example) — every agent
+
+Each agent ALSO writes a standalone HTML flow design document for its module,
+at the SAME LEVEL OF DEPTH as the reference example:
+`de-postman/discovery-engine-import-single-replica-options.html` (a rich
+single-file HTML with inline mermaid diagrams and color-coded nodes). Match its
+structure and depth EXACTLY:
+
+1. **Title + "question on the table"** — one paragraph framing the design
+   question the flow answers (e.g., for scheduling: "one scheduler tick
+   currently fans out to N devices through a shared pool — should a tick own
+   its whole batch in-process instead?").
+2. **Current flow** — prose walking the flow end-to-end with concrete numbers
+   (buffer sizes, timeouts, worker counts, costs: "Cost: ... exists only to
+   ..."), followed by a `flowchart LR` mermaid diagram with subgraphs for the
+   boundaries in your module (service ↔ channels ↔ worker pool ↔ DB/plugin),
+   and color-coded `style` lines on the key node.
+3. **Three candidate flows** — Option A (simplest, do-less), Option B
+   (industry default), Option C (isolation/future). For EACH: a one-word
+   tagline, prose explaining step-by-step behavior, what it DELETES, what it
+   ADDS, its tradeoff, and its own `flowchart LR` mermaid diagram with
+   subgraphs + colored style. Make each option a REAL alternative with
+   genuinely different tradeoffs, not a strawman.
+4. **How the industry solves this exact problem** — a table: Pattern |
+   Who / where | Maps to (which option). 5–8 rows, grounded in real systems
+   (e.g. Kubernetes scheduler, Temporal/Sidekiq, AWS SQS visibility timeout,
+   Zabbix/Nagios health windows, Ansible WinRM, sidecar pattern, CQRS).
+5. **Decision ladder** — A → B → C upgrade ladder: when to pick each, and
+   what EVERY option removes compared to current (the shared complexity).
+
+Technical depth requirements: use the module's real constants and channels
+(buffer sizes, RPC_TIMEOUT, pluginExecTimeout, MAX_EXPAND_HOSTS, thresholds);
+reference the real component names from the module's Go source; the mermaid
+diagrams must render (valid mermaid syntax, `&lt;br/&gt;` for line breaks,
+subgraph blocks, `style X fill:#hex,color:#fff`).
+
+Write to `crates/nms/docs/flows/<module>-flow.html` (create dir). Keep the
+HTML self-contained (inline <style> + <script src="https://cdn.jsdelivr.net/npm/mermaid..."> for rendering, like the example). ~2–3k lines of rich HTML expected, mirroring the example's density.
+
+Per-module flow subjects (frame the design question yourself from the Go code):
+- api: request lifecycle through middleware → router → channel RPC → service.
+- database: dynamic SQL CRUD (reflection-free) — query build strategy.
+- plugin_worker: plugin execution (subprocess JSON) — isolation options.
+- scheduling/polling: scheduler tick → fping → poller → pool fan-out.
+- persistence: entity cache + metrics write/read (CopyFrom equivalent).
+- discovery/health: CIDR expansion + pending tracking; failure window.
+- winrm-plugin: batch WinRM execution protocol.

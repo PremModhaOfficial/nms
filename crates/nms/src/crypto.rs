@@ -3,8 +3,9 @@
 //! nonce, ciphertext = hex(nonce ‖ ct). Existing stored ciphertext stays
 //! decryptable with no migration.
 
-use aes_gcm::aead::{Aead, KeyInit, OsRng};
-use aes_gcm::{Aes256Gcm, Nonce};
+use aes_gcm::aead::{Aead, KeyInit};
+use rand::Rng;
+use aes_gcm::Aes256Gcm;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
@@ -22,13 +23,11 @@ fn new_aead(secret_key: &str) -> Result<Aes256Gcm, String> {
 
 /// Encrypt plain with AES-256-GCM and hex-encode the nonce-prefixed ciphertext.
 fn encrypt_string(aead: &Aes256Gcm, plain: &str) -> Result<String, String> {
-    let nonce = Nonce::from_slice(&[0u8; 12]); // placeholder; replaced below
     let mut nonce_bytes = [0u8; 12];
-    use aes_gcm::aead::rand_core::RngCore;
-    OsRng.fill_bytes(&mut nonce_bytes);
-    let nonce = Nonce::from_slice(&nonce_bytes);
+    rand::rng().fill_bytes(&mut nonce_bytes);
+    let nonce: aes_gcm::Nonce<aes_gcm::aead::consts::U12> = nonce_bytes.into();
     let ciphertext = aead
-        .encrypt(nonce, plain.as_bytes())
+        .encrypt(&nonce, plain.as_bytes())
         .map_err(|e| format!("encrypt failed: {e}"))?;
     // nonce-prefixed, hex-encoded (Go layout)
     let mut out = Vec::with_capacity(nonce_bytes.len() + ciphertext.len());
@@ -46,8 +45,12 @@ fn decrypt_string(aead: &Aes256Gcm, encoded: &str) -> Result<String, String> {
         return Err("ciphertext too short".into());
     }
     let (nonce, ct) = ciphertext.split_at(nonce_size);
+    let nonce_arr: [u8; 12] = nonce
+        .try_into()
+        .map_err(|_| "invalid nonce length".to_string())?;
+    let nonce: aes_gcm::Nonce<aes_gcm::aead::consts::U12> = nonce_arr.into();
     let plain = aead
-        .decrypt(Nonce::from_slice(nonce), ct)
+        .decrypt(&nonce, ct)
         .map_err(|e| format!("decrypt failed: {e}"))?;
     String::from_utf8(plain).map_err(|e| format!("decrypted payload not UTF-8: {e}"))
 }
@@ -57,7 +60,7 @@ fn decrypt_string(aead: &Aes256Gcm, encoded: &str) -> Result<String, String> {
 /// payloads are left untouched so partial updates can omit them.
 pub fn encrypt_payload<T>(entity: &T, secret_key: &str) -> Result<T, String>
 where
-    T: Serialize + DeserializeOwned,
+    T: Serialize + DeserializeOwned + PayloadHolder,
 {
     let aead = new_aead(secret_key)?;
     transform_payload(entity, &aead, encrypt_string)

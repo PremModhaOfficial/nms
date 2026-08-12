@@ -16,6 +16,7 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use rand::{Rng, SeedableRng};
 use tokio::sync::Mutex;
 
 use crate::services::clock::Clock;
@@ -109,7 +110,8 @@ pub struct SpanGuard {
     ended_at: Option<DateTime<Utc>>,
     attributes: HashMap<String, serde_json::Value>,
     events: Vec<SpanEvent>,
-    tracer: Arc<Tracer>,
+    clock: Arc<dyn Clock>,
+    exporter: Arc<exporter::Exporter>,
 }
 
 impl SpanGuard {
@@ -122,7 +124,7 @@ impl SpanGuard {
     pub fn event(&mut self, name: impl Into<String>, attrs: Vec<(String, serde_json::Value)>) {
         self.events.push(SpanEvent {
             name: name.into(),
-            time: self.tracer.clock.now(),
+            time: self.clock.now(),
             attributes: if attrs.is_empty() { None } else { Some(attrs.into_iter().collect()) },
         });
     }
@@ -139,7 +141,8 @@ impl SpanGuard {
 
 impl Drop for SpanGuard {
     fn drop(&mut self) {
-        self.ended_at = Some(self.tracer.clock.now());
+        let now = self.clock.now();
+        self.ended_at = Some(now);
         let span = Span {
             span_id: self.ctx.span_id.clone(),
             parent_id: self.ctx.parent_id.clone(),
@@ -147,12 +150,12 @@ impl Drop for SpanGuard {
             kind: self.kind.clone(),
             component: self.component.clone(),
             started_at: self.started_at,
-            ended_at: self.ended_at.unwrap_or_else(|| self.tracer.clock.now()),
-            duration_ms: duration_ms(self.started_at, self.ended_at.unwrap_or_else(|| self.tracer.clock.now())),
+            ended_at: self.ended_at.unwrap_or(now),
+            duration_ms: duration_ms(self.started_at, now),
             attributes: if self.attributes.is_empty() { None } else { Some(std::mem::take(&mut self.attributes)) },
             events: if self.events.is_empty() { None } else { Some(std::mem::take(&mut self.events)) },
         };
-        self.tracer.exporter.add_span(self.ctx.clone(), span, self.is_root);
+        self.exporter.add_span(self.ctx.clone(), span, self.is_root);
     }
 }
 
@@ -167,7 +170,7 @@ pub struct Tracer {
 impl Tracer {
     /// Build a tracer with an injectable clock and a seeded RNG (DST).
     pub fn new(clock: Arc<dyn Clock>, seed: u64) -> Arc<Tracer> {
-        let store = Arc::new(store::Store::new());
+        let store = store::Store::new();
         let exporter = Arc::new(exporter::Exporter::new(store));
         Arc::new(Tracer {
             clock,
@@ -182,7 +185,6 @@ impl Tracer {
 
     fn gen_hex(&self, bytes: usize) -> String {
         let mut buf = vec![0u8; bytes];
-        use rand::RngCore;
         let mut rng = self.rng.blocking_lock();
         rng.fill_bytes(&mut buf);
         hex::encode(buf)
@@ -215,7 +217,8 @@ impl Tracer {
             ended_at: None,
             attributes: HashMap::new(),
             events: Vec::new(),
-            tracer: self.clone(),
+            clock: self.clock.clone(),
+            exporter: self.exporter.clone(),
         };
         (ctx, guard)
     }
@@ -231,7 +234,7 @@ impl Tracer {
 }
 
 fn duration_ms(start: DateTime<Utc>, end: DateTime<Utc>) -> f64 {
-    (end - start).num_microseconds() as f64 / 1000.0
+    (end - start).num_microseconds().unwrap_or(0) as f64 / 1000.0
 }
 
 /// Global tracer initialized by main (and by tests via init_with_seed).

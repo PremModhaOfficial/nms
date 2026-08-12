@@ -117,13 +117,8 @@ impl Store {
 impl StoreInner {
     /// Normalize an index into [0, TRACE_BUFFER_SIZE) without panicking on
     /// negative or overflow values (tiger: no unchecked arithmetic).
-    fn ring_idx(&self, i: isize) -> usize {
-        let size = TRACE_BUFFER_SIZE as isize;
-        let mut idx = i % size;
-        if idx < 0 {
-            idx += size;
-        }
-        idx as usize
+    fn ring_idx(&self, i: usize) -> usize {
+        i % TRACE_BUFFER_SIZE
     }
 }
 
