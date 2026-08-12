@@ -1,0 +1,37 @@
+[workspace]
+resolver = "2"
+members = ["crates/nms", "crates/winrm-plugin"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "time", "sync", "process", "signal", "io-util", "fs", "net"] }
+axum = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "postgres", "derive", "chrono", "json"] }
+jsonwebtoken = { version = "11", default-features = false, features = ["rust_crypto"] }
+bcrypt = "0.19"
+aes-gcm = "0.11"
+hex = "0.4"
+chrono = { version = "0.4", features = ["serde"] }
+rand = "0.10"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
+thiserror = "2"
+rust-embed = "8"
+libc = "0.2"
+tokio-util = "0.7"
+regex = "1"
+futures = "0.3"
+http = "1"
+tower = "0.5"
+tower-http = { version = "0.6", features = ["limit"] }
+uuid = { version = "1", features = ["v4"] }
+async-trait = "0.1"
+
+[profile.release]
+lto = "thin"

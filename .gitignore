@@ -15,3 +15,7 @@
 winrm-pin
 .dev-dashboard.pid
 app.log
+
+# Rust build artifacts
+/target/
+Cargo.lock
