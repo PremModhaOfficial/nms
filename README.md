@@ -1,6 +1,8 @@
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/PremModhaOfficial/nms)
 # Network Monitoring System (NMS) - Lite
 
+> Status: maintenance-mode since Aug 2026.
+
 A lightweight, extensible network monitoring system for discovery, monitoring, and metric collection.
 
 ## Component Diagram
@@ -105,3 +107,7 @@ The project uses a `Makefile` to simplify common tasks. For a completely new env
 ## Security
 
 The API is protected using JWT authentication. Ensure you have a valid token (generated via the admin login) to interact with the management endpoints.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
