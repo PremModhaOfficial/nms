@@ -35,7 +35,7 @@ Follow these steps to set up and run the NMS on a new machine.
 
 ### Prerequisites
 
-- **Go:** 1.25 or higher (the module targets `go 1.25.5`)
+- **Go:** 1.26.4 or higher (the module targets `go 1.26.4`)
 - **PostgreSQL:** Ensure you have a running instance.
 - **Python 3:** For database seeding (optional).
 - **Make:** For using the automation commands.
@@ -52,10 +52,10 @@ Follow these steps to set up and run the NMS on a new machine.
 
 ### 2. Configuration
 
-Create or update your `.env` file with the necessary environment variables:
-- `DB_URL`: PostgreSQL connection string.
+Create or update your `.env` file with the necessary environment variables (see `.env.example` for the full list with defaults):
+- `DB_HOST` / `DB_PORT` / `DB_USER` / `DB_PASSWORD` / `DB_NAME`: PostgreSQL connection settings.
 - `JWT_SECRET`: Secret key for token generation.
-- `ENCRYPTION_KEY`: 32-character key for data encryption.
+- `ENCRYPTION_KEY`: 64-character key for data encryption.
 
 ### 3. Build and Run
 
